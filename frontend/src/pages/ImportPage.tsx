@@ -23,6 +23,7 @@ interface ProgressEvent {
 export default function ImportPage() {
   const [dragging, setDragging] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
   const [progress, setProgress] = useState<ProgressEvent | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -62,6 +63,7 @@ export default function ImportPage() {
     }
 
     setUploading(true)
+    setUploadProgress(0)
     setProgress(null)
 
     const formData = new FormData()
@@ -70,6 +72,10 @@ export default function ImportPage() {
     try {
       const res = await api.post<{ job_id: string }>('/import', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (progressEvent) => {
+          const percent = Math.round((progressEvent.loaded * 100) / (progressEvent.total || file.size))
+          setUploadProgress(percent)
+        }
       })
       setActiveJobId(res.data.job_id)
       refetch()
@@ -132,28 +138,34 @@ export default function ImportPage() {
         />
         <div className="text-5xl mb-4">📂</div>
         <p className="text-gray-300 text-lg">
-          {uploading ? 'Завантаження...' : 'Перетягни .xlsb файл або клікни для вибору'}
+          {uploading ? `Завантаження файлу... (${uploadProgress}%)` : 'Перетягни .xlsb файл або клікни для вибору'}
         </p>
         <p className="text-gray-500 text-sm mt-2">Максимум 500 МБ</p>
       </div>
 
       {/* Progress */}
-      {progress && (
+      {(uploading || progress) && (
         <div className="bg-gray-900 rounded-xl p-5 space-y-3">
           <div className="flex justify-between text-sm">
-            <span className={statusColor(progress.status)}>{statusLabel(progress.status)}</span>
+            <span className={uploading ? 'text-yellow-400' : statusColor(progress?.status || '')}>
+              {uploading ? 'Завантаження файлу на сервер' : statusLabel(progress?.status || '')}
+            </span>
             <span className="text-gray-400">
-              {progress.processed.toLocaleString()} / {progress.total?.toLocaleString() ?? '?'} рядків
+              {uploading 
+                ? `${uploadProgress}%` 
+                : `${progress?.processed.toLocaleString()} / ${progress?.total?.toLocaleString() ?? '?'} рядків`}
             </span>
           </div>
           <div className="w-full bg-gray-800 rounded-full h-3">
             <div
-              className="bg-blue-500 h-3 rounded-full transition-all duration-500"
-              style={{ width: `${pct}%` }}
+              className="bg-blue-500 h-3 rounded-full transition-all duration-300"
+              style={{ width: `${uploading ? uploadProgress : pct}%` }}
             />
           </div>
-          <div className="text-right text-sm text-gray-400">{pct}%</div>
-          {progress.error && (
+          <div className="text-right text-sm text-gray-400">
+            {uploading ? `${uploadProgress}%` : `${pct}%`}
+          </div>
+          {progress?.error && (
             <p className="text-red-400 text-sm">{progress.error}</p>
           )}
         </div>
