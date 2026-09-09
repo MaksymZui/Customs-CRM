@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Declaration {
+  id Int @id @default(autoincrement())
+
+  decl_type_1 Float?
+  decl_type_2 Float?
+  decl_type_3 String?
+  decl_type_4 String?
+
+  decl_num_prefix String?
+  decl_num_year   Float?
+  decl_num_number Float?
+
+  declaration_date    Float?
+  customs_office      String?
+  customs_post        String?
+  trade_country       String?
+  dispatch_country    String?
+  origin_country      String?
+  container_presence  String?
+  container_number    String?
+
+  delivery_condition  String?
+  delivery_place      String?
+
+  currency_code       Float?
+  currency_name       String?
+
+  border_transport_code  String?
+  border_transport_name  String?
+  border_transport_num   String?
+
+  inland_transport_code  String?
+  inland_transport_name  String?
+
+  border_transport_code2 String?
+
+  border_customs_code String?
+  border_customs_name String?
+  border_customs_post String?
+
+  item_number  Float?
+  product_code String?
+  product_name String?
+
+  recipient_code Float?
+  recipient_name String?
+
+  reverse_side String?
+  field_35     String?
+  field_36     String?
+
+  sender_name String?
+
+  contract_holder_1 String?
+  contract_holder_2 String?
+
+  valuation_method Float?
+  add_unit_qty     Float?
+  add_unit_name    String?
+
+  weight_gross      Float?
+  weight_net        Float?
+  invoice_value_uah Float?
+  invoice_value_usd Float?
+  exchange_rate     Float?
+  customs_value_uah Float?
+  customs_value_usd Float?
+  customs_value_per_kg Float?
+  duty_uah          Float?
+  excise_uah        Float?
+  vat_uah           Float?
+
+  import_id  String?
+  created_at DateTime @default(now())
+
+  @@index([decl_num_prefix])
+  @@index([customs_office])
+  @@index([trade_country])
+  @@index([origin_country])
+  @@index([product_code])
+  @@index([recipient_code])
+  @@index([declaration_date])
+  @@index([import_id])
+  @@map("declarations")
+}
+
+model ImportJob {
+  id          String    @id @default(uuid())
+  filename    String
+  status      String    @default("pending")
+  total_rows  Int?
+  processed   Int       @default(0)
+  error       String?
+  created_at  DateTime  @default(now())
+  finished_at DateTime?
+
+  @@map("import_jobs")
+}
