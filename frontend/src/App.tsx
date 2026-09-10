@@ -91,7 +91,7 @@ export default function App() {
 
   useEffect(() => {
     if (isAuth) {
-      fetch('/api/import/jobs')
+     fetch('/api/import')
         .then((res) => res.json())
         .then((data) => {
           if (Array.isArray(data)) setJobs(data)
