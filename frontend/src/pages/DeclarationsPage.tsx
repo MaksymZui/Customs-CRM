@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { declarationsApi, excelDateToString, formatUSD, formatKg, type DeclarationFilters } from '../api/declarations'
 
@@ -12,9 +12,28 @@ const SORT_FIELDS = [
 ]
 
 export default function DeclarationsPage() {
-  const [filters, setFilters] = useState<DeclarationFilters>({ page: 1, limit: 50, sortBy: 'id', sortDir: 'asc' })
+  const [filters, setFilters] = useState<DeclarationFilters>(() => ({
+    page: 1,
+    limit: 50,
+    sortBy: 'id',
+    sortDir: 'asc',
+    importId: localStorage.getItem('selectedImportId') || 'latest',
+  }))
   const [expanded, setExpanded] = useState<number | null>(null)
   const [showFilters, setShowFilters] = useState(false)
+
+  // Слушаем изменения фильтра импорта из шапки CRM
+  useEffect(() => {
+    const handleImportChange = () => {
+      const currentImport = localStorage.getItem('selectedImportId') || 'latest'
+      setFilters(prev => ({ ...prev, importId: currentImport, page: 1 }))
+    }
+
+    window.addEventListener('importFilterChanged', handleImportChange)
+    return () => {
+      window.removeEventListener('importFilterChanged', handleImportChange)
+    }
+  }, [])
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['declarations', filters],
@@ -33,7 +52,8 @@ export default function DeclarationsPage() {
   }
 
   const clearFilters = () => {
-    setFilters({ page: 1, limit: 50, sortBy: 'id', sortDir: 'asc' })
+    const currentImport = localStorage.getItem('selectedImportId') || 'latest'
+    setFilters({ page: 1, limit: 50, sortBy: 'id', sortDir: 'asc', importId: currentImport })
   }
 
   const toggleSort = (field: string) => {
@@ -284,67 +304,67 @@ export default function DeclarationsPage() {
                {data?.data.map(row => (
   <React.Fragment key={row.id}>
     <tr
-                      key={row.id}
-                      className="border-t border-gray-800 hover:bg-gray-800/50 cursor-pointer"
-                      onClick={() => setExpanded(expanded === row.id ? null : row.id)}
-                    >
-                      <td className="px-4 py-2 text-gray-300 whitespace-nowrap">
-                        {excelDateToString(row.declaration_date)}
-                      </td>
-                      <td className="px-4 py-2 text-blue-400 font-mono whitespace-nowrap">
-                        {row.decl_num_prefix}/{row.decl_num_year?.toFixed(0)}/{row.decl_num_number?.toFixed(0)}
-                      </td>
-                      <td className="px-4 py-2 text-gray-300 max-w-[180px] truncate">
-                        {row.customs_office}
-                      </td>
-                      <td className="px-4 py-2 text-gray-300 whitespace-nowrap">
-                        {row.origin_country}
-                      </td>
-                      <td className="px-4 py-2 text-gray-300 font-mono">
-                        {row.product_code?.substring(0, 10)}
-                      </td>
-                      <td className="px-4 py-2 text-gray-300 max-w-[200px] truncate">
-                        {row.recipient_name}
-                      </td>
-                      <td className="px-4 py-2 text-right text-gray-300 whitespace-nowrap">
-                        {formatKg(row.weight_net)}
-                      </td>
-                      <td className="px-4 py-2 text-right text-gray-300 whitespace-nowrap">
-                        {formatUSD(row.invoice_value_usd)}
-                      </td>
-                      <td className="px-4 py-2 text-right text-gray-300 whitespace-nowrap">
-                        {formatUSD(row.customs_value_usd)}
-                      </td>
-                      <td className="px-4 py-2 text-right text-yellow-400 whitespace-nowrap">
-                        {formatUSD(row.duty_uah)}
-                      </td>
-                      <td className="px-4 py-2 text-right text-gray-300 whitespace-nowrap">
-                        {formatUSD(row.vat_uah)}
+                    key={row.id}
+                    className="border-t border-gray-800 hover:bg-gray-800/50 cursor-pointer"
+                    onClick={() => setExpanded(expanded === row.id ? null : row.id)}
+                  >
+                    <td className="px-4 py-2 text-gray-300 whitespace-nowrap">
+                      {excelDateToString(row.declaration_date)}
+                    </td>
+                    <td className="px-4 py-2 text-blue-400 font-mono whitespace-nowrap">
+                      {row.decl_num_prefix}/{row.decl_num_year?.toFixed(0)}/{row.decl_num_number?.toFixed(0)}
+                    </td>
+                    <td className="px-4 py-2 text-gray-300 max-w-[180px] truncate">
+                      {row.customs_office}
+                    </td>
+                    <td className="px-4 py-2 text-gray-300 whitespace-nowrap">
+                      {row.origin_country}
+                    </td>
+                    <td className="px-4 py-2 text-gray-300 font-mono">
+                      {row.product_code?.substring(0, 10)}
+                    </td>
+                    <td className="px-4 py-2 text-gray-300 max-w-[200px] truncate">
+                      {row.recipient_name}
+                    </td>
+                    <td className="px-4 py-2 text-right text-gray-300 whitespace-nowrap">
+                      {formatKg(row.weight_net)}
+                    </td>
+                    <td className="px-4 py-2 text-right text-gray-300 whitespace-nowrap">
+                      {formatUSD(row.invoice_value_usd)}
+                    </td>
+                    <td className="px-4 py-2 text-right text-gray-300 whitespace-nowrap">
+                      {formatUSD(row.customs_value_usd)}
+                    </td>
+                    <td className="px-4 py-2 text-right text-yellow-400 whitespace-nowrap">
+                      {formatUSD(row.duty_uah)}
+                    </td>
+                    <td className="px-4 py-2 text-right text-gray-300 whitespace-nowrap">
+                      {formatUSD(row.vat_uah)}
+                    </td>
+                  </tr>
+                  {expanded === row.id && (
+                    <tr key={`${row.id}-expanded`} className="border-t border-gray-700 bg-gray-800/30">
+                      <td colSpan={11} className="px-6 py-4">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                          <div><span className="text-gray-500">Відправник:</span> <span className="text-gray-200">{row.sender_name || '—'}</span></div>
+                          <div><span className="text-gray-500">Контейнер:</span> <span className="text-gray-200">{row.container_number || '—'}</span></div>
+                          <div><span className="text-gray-500">Умови поставки:</span> <span className="text-gray-200">{row.delivery_condition || '—'}</span></div>
+                          <div><span className="text-gray-500">Валюта:</span> <span className="text-gray-200">{row.currency_name || '—'}</span></div>
+                          <div><span className="text-gray-500">Курс:</span> <span className="text-gray-200">{row.exchange_rate || '—'}</span></div>
+                          <div><span className="text-gray-500">Вага брутто:</span> <span className="text-gray-200">{formatKg(row.weight_gross)}</span></div>
+                          <div className="col-span-2 md:col-span-3">
+                            <span className="text-gray-500">Отримувач:</span>
+                            <p className="text-gray-200 mt-1 leading-relaxed">{row.recipient_name || '—'}</p>
+                          </div>
+                          <div className="col-span-2 md:col-span-3">
+                            <span className="text-gray-500">Назва товару:</span>
+                            <p className="text-gray-200 mt-1 leading-relaxed">{row.product_name || '—'}</p>
+                          </div>
+                        </div>
                       </td>
                     </tr>
-                    {expanded === row.id && (
-                      <tr key={`${row.id}-expanded`} className="border-t border-gray-700 bg-gray-800/30">
-                        <td colSpan={11} className="px-6 py-4">
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-                            <div><span className="text-gray-500">Відправник:</span> <span className="text-gray-200">{row.sender_name || '—'}</span></div>
-                            <div><span className="text-gray-500">Контейнер:</span> <span className="text-gray-200">{row.container_number || '—'}</span></div>
-                            <div><span className="text-gray-500">Умови поставки:</span> <span className="text-gray-200">{row.delivery_condition || '—'}</span></div>
-                            <div><span className="text-gray-500">Валюта:</span> <span className="text-gray-200">{row.currency_name || '—'}</span></div>
-                            <div><span className="text-gray-500">Курс:</span> <span className="text-gray-200">{row.exchange_rate || '—'}</span></div>
-                            <div><span className="text-gray-500">Вага брутто:</span> <span className="text-gray-200">{formatKg(row.weight_gross)}</span></div>
-                            <div className="col-span-2 md:col-span-3">
-                              <span className="text-gray-500">Отримувач:</span>
-                              <p className="text-gray-200 mt-1 leading-relaxed">{row.recipient_name || '—'}</p>
-                            </div>
-                            <div className="col-span-2 md:col-span-3">
-                              <span className="text-gray-500">Назва товару:</span>
-                              <p className="text-gray-200 mt-1 leading-relaxed">{row.product_name || '—'}</p>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                 </React.Fragment>
+                  )}
+               </React.Fragment>
 ))}
               </tbody>
             </table>

@@ -30,11 +30,12 @@ declarationsRouter.get('/filters/options', async (_req: Request, res: Response) 
 
 declarationsRouter.get('/', async (req: Request, res: Response) => {
   try {
-    const {
+    let {
       page = '1',
       limit = '50',
       sortBy = 'id',
       sortDir = 'asc',
+      importId = 'latest',
       customs_office,
       trade_country,
       origin_country,
@@ -53,12 +54,25 @@ declarationsRouter.get('/', async (req: Request, res: Response) => {
       search,
     } = req.query as Record<string, string>
 
+    // Если указано 'latest' или параметр пустой, находим ID самого последнего импорта
+    if (!importId || importId === 'latest') {
+      const latestJob = await prisma.importJob.findFirst({
+        orderBy: { created_at: 'desc' },
+      })
+      importId = latestJob ? latestJob.id : ''
+    }
+
     const take = Math.min(parseInt(limit), 200)
     const skip = (parseInt(page) - 1) * take
     const orderField = ALLOWED_SORT.has(sortBy) ? sortBy : 'id'
     const orderDir = sortDir === 'desc' ? 'desc' : 'asc'
 
     const where: Record<string, unknown> = {}
+
+    // Фильтрация по конкретному импорту (если не выбрано 'all')
+    if (importId && importId !== 'all') {
+      where.import_id = importId
+    }
 
     if (customs_office) where.customs_office = { in: customs_office.split(',') }
     if (trade_country) where.trade_country = { in: trade_country.split(',') }
@@ -129,6 +143,7 @@ declarationsRouter.get('/', async (req: Request, res: Response) => {
           excise_uah: true,
           vat_uah: true,
           exchange_rate: true,
+          import_id: true,
         },
       }),
       prisma.declaration.count({ where }),

@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../api/client'
 import { formatUSD, formatUAH, formatKg } from '../api/declarations'
@@ -17,9 +18,23 @@ interface Stats {
 }
 
 export default function StatsPage() {
+  const [importId, setImportId] = useState<string>(() => localStorage.getItem('selectedImportId') || 'latest')
+
+  // Слушаем изменения импорта в шапке CRM
+  useEffect(() => {
+    const handleImportChange = () => {
+      setImportId(localStorage.getItem('selectedImportId') || 'latest')
+    }
+
+    window.addEventListener('importFilterChanged', handleImportChange)
+    return () => {
+      window.removeEventListener('importFilterChanged', handleImportChange)
+    }
+  }, [])
+
   const { data, isLoading } = useQuery({
-    queryKey: ['stats'],
-    queryFn: () => api.get<Stats>('/stats').then(r => r.data),
+    queryKey: ['stats', importId],
+    queryFn: () => api.get<Stats>('/stats', { params: { importId } }).then(r => r.data),
   })
 
   if (isLoading) return <p className="text-gray-400">Завантаження...</p>

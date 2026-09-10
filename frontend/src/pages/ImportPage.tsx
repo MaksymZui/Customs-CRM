@@ -48,6 +48,13 @@ export default function ImportPage() {
         es.close()
         setActiveJobId(null)
         refetch()
+
+        // Якщо імпорт успішно завершено, оновлюємо обраний файл у localStorage на 'latest' 
+        // та сповіщаємо інші компоненти (шапку, таблицю, статистику)
+        if (data.status === 'done') {
+          localStorage.setItem('selectedImportId', 'latest')
+          window.dispatchEvent(new Event('importFilterChanged'))
+        }
       }
     }
 
