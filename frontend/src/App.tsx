@@ -16,15 +16,25 @@ function LoginModal({ onSuccess }: { onSuccess: () => void }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (login === 'admin' && password === 'admin123') {
+  const handleLogin = async (e: React.FormEvent) => {
+  e.preventDefault()
+  try {
+    const response = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: login, password }),
+    })
+    const data = await response.json()
+    if (data.success) {
       localStorage.setItem('isAuthenticated', 'true')
       onSuccess()
     } else {
-      setError('Невірний логін або пароль')
+      setError(data.message || 'Невірний логін або пароль')
     }
+  } catch {
+    setError('Помилка підключення до сервера')
   }
+}
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">

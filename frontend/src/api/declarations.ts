@@ -51,6 +51,7 @@ export interface DeclarationFilters {
   limit?: number
   sortBy?: string
   sortDir?: 'asc' | 'desc'
+  importId?: string
   customs_office?: string
   trade_country?: string
   origin_country?: string
