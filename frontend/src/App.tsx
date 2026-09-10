@@ -16,38 +16,27 @@ function LoginModal({ onSuccess }: { onSuccess: () => void }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
-    try {
-      const response = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: login, password }),
-      })
-      const data = await response.json()
-      
-      if (data.success) {
-        localStorage.setItem('isAuthenticated', 'true')
-        onSuccess()
-      } else {
-        setError(data.message || 'Невірний логін або пароль')
-      }
-    } catch (err) {
-      setError('Помилка підключення до сервера')
+    if (login === 'admin' && password === 'admin123') {
+      localStorage.setItem('isAuthenticated', 'true')
+      onSuccess()
+    } else {
+      setError('Невірний логін або пароль')
     }
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
       <div className="w-full max-w-md p-8 bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl">
-        <h2 className="text-2xl font-bold text-white mb-6 text-center">Авторизація в Customs CRM</h2>
+        <h2 className="text-2xl font-bold text-white mb-6 text-center">Customs CRM</h2>
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-400 mb-1">Логін</label>
             <input
               type="text"
               value={login}
-              onChange={(e) => setLogin(e.target.value)}
+              onChange={e => setLogin(e.target.value)}
               className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
               required
             />
@@ -57,7 +46,7 @@ function LoginModal({ onSuccess }: { onSuccess: () => void }) {
             <input
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={e => setPassword(e.target.value)}
               className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
               required
             />
@@ -83,21 +72,28 @@ export default function App() {
   )
 
   useEffect(() => {
-    const authStatus = localStorage.getItem('isAuthenticated')
-    if (authStatus === 'true') {
+    if (localStorage.getItem('isAuthenticated') === 'true') {
       setIsAuth(true)
     }
   }, [])
 
   useEffect(() => {
-    if (isAuth) {
-     fetch('/api/import')
-        .then((res) => res.json())
-        .then((data) => {
-          if (Array.isArray(data)) setJobs(data)
+    if (!isAuth) return
+
+    const loadJobs = () => {
+      fetch('/api/import')
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            setJobs(data.filter(j => j.status === 'done'))
+          }
         })
-        .catch((err) => console.error(err))
+        .catch(err => console.error(err))
     }
+
+    loadJobs()
+    const interval = setInterval(loadJobs, 10000)
+    return () => clearInterval(interval)
   }, [isAuth])
 
   const handleImportChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -116,29 +112,13 @@ export default function App() {
       <nav className="bg-gray-900 border-b border-gray-800 px-6 py-3 flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-6">
           <span className="text-blue-400 font-bold text-lg mr-2">Customs CRM</span>
-          <NavLink
-            to="/"
-            end
-            className={({ isActive }) =>
-              isActive ? 'text-blue-400 font-medium' : 'text-gray-400 hover:text-gray-100'
-            }
-          >
+          <NavLink to="/" end className={({ isActive }) => isActive ? 'text-blue-400 font-medium' : 'text-gray-400 hover:text-gray-100'}>
             Декларації
           </NavLink>
-          <NavLink
-            to="/import"
-            className={({ isActive }) =>
-              isActive ? 'text-blue-400 font-medium' : 'text-gray-400 hover:text-gray-100'
-            }
-          >
+          <NavLink to="/import" className={({ isActive }) => isActive ? 'text-blue-400 font-medium' : 'text-gray-400 hover:text-gray-100'}>
             Імпорт
           </NavLink>
-          <NavLink
-            to="/stats"
-            className={({ isActive }) =>
-              isActive ? 'text-blue-400 font-medium' : 'text-gray-400 hover:text-gray-100'
-            }
-          >
+          <NavLink to="/stats" className={({ isActive }) => isActive ? 'text-blue-400 font-medium' : 'text-gray-400 hover:text-gray-100'}>
             Статистика
           </NavLink>
         </div>
@@ -150,11 +130,14 @@ export default function App() {
             onChange={handleImportChange}
             className="bg-gray-900 border border-gray-700 text-white text-xs rounded-md px-2 py-1.5 focus:outline-none focus:border-blue-500"
           >
-            <option value="latest">⚡ Останній завантажений файл</option>
-            <option value="all">🌐 Обрати всі файли (Вся база)</option>
-            {jobs.map((job) => (
+            <option value="latest">⚡ Останній імпорт</option>
+            <option value="all">🌐 Вся база</option>
+            {jobs.map(job => (
               <option key={job.id} value={job.id}>
-                {job.filename} ({new Date(job.created_at).toLocaleString()})
+                {job.filename} — {new Date(job.created_at).toLocaleString('uk-UA', {
+                  day: '2-digit', month: '2-digit', year: 'numeric',
+                  hour: '2-digit', minute: '2-digit'
+                })}
               </option>
             ))}
           </select>
