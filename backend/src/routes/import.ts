@@ -3,7 +3,7 @@ import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
 import { v4 as uuidv4 } from 'uuid'
-import { spawn } from 'child_process'
+import { exec } from 'child_process'
 import prisma from '../lib/prisma'
 
 export const importRouter = Router()
@@ -42,21 +42,19 @@ importRouter.post('/', upload.single('file'), async (req: Request, res: Response
     },
   })
 
-  // Корректный путь к скрипту из папки backend
   const scriptPath = path.resolve(process.cwd(), '..', 'scripts', 'import_xlsb.py')
-
   const isWindows = process.platform === 'win32'
   const pythonCmd = isWindows ? 'python' : 'python3'
+  const dbUrl = process.env.DATABASE_URL || ''
+  const filePath = req.file.path
+  const jobId = job.id
 
-  // Используем spawn с массивом аргументов — это безопасно для путей с пробелами и спецсимволами
-  const child = spawn(pythonCmd, [scriptPath, req.file.path, job.id], {
-    env: { ...process.env },
-    detached: true,
-    stdio: 'ignore', // Отвязываем стандартные потоки ввода-вывода
-    windowsHide: true,
+  const cmd = `${pythonCmd} "${scriptPath}" "${filePath}" "${jobId}"`
+
+  const child = exec(cmd, {
+    env: { ...process.env, DATABASE_URL: dbUrl },
   })
 
-  // Отвязываем процесс от родительского бэкенда, чтобы он работал в фоне автономно
   child.unref()
 
   res.json({ job_id: job.id })

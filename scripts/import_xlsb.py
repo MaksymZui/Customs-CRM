@@ -14,7 +14,7 @@ except ImportError as e:
 
 FILE_PATH = sys.argv[1]
 JOB_ID = sys.argv[2]
-DATABASE_URL="postgresql://postgres:StN)hRvy9jIe0V1%25IgZ9%3C45nt9mpf*@localhost:5432/customs_crm?connection_limit=50&pool_timeout=30"
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://customs_admin:customs_pass_2026@localhost:5432/customs_crm")
 
 BATCH_SIZE = 5000
 
