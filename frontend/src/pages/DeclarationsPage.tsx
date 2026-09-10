@@ -333,6 +333,10 @@ export default function DeclarationsPage() {
                             <div><span className="text-gray-500">Курс:</span> <span className="text-gray-200">{row.exchange_rate || '—'}</span></div>
                             <div><span className="text-gray-500">Вага брутто:</span> <span className="text-gray-200">{formatKg(row.weight_gross)}</span></div>
                             <div className="col-span-2 md:col-span-3">
+                              <span className="text-gray-500">Отримувач:</span>
+                              <p className="text-gray-200 mt-1 leading-relaxed">{row.recipient_name || '—'}</p>
+                            </div>
+                            <div className="col-span-2 md:col-span-3">
                               <span className="text-gray-500">Назва товару:</span>
                               <p className="text-gray-200 mt-1 leading-relaxed">{row.product_name || '—'}</p>
                             </div>
