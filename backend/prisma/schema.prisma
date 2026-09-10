@@ -67,8 +67,8 @@ model Declaration {
   add_unit_qty     Float?
   add_unit_name    String?
 
-  weight_gross      Float?
-  weight_net        Float?
+  weight_gross        Float?
+  weight_net          Float?
   invoice_value_uah Float?
   invoice_value_usd Float?
   exchange_rate     Float?

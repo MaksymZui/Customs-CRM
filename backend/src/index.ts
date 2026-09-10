@@ -24,4 +24,17 @@ const server = app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`)
 })
 
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body
+  
+  const validUser = process.env.ADMIN_USER || 'admin'
+  const validPass = process.env.ADMIN_PASSWORD || 'admin123'
+
+  if (username === validUser && password === validPass) {
+    res.json({ success: true })
+  } else {
+    res.status(401).json({ success: false, message: 'Невірний логін або пароль' })
+  }
+})
+
 server.setTimeout(600000) // 10 хвилин (600 000 мс)

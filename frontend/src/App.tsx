@@ -1,9 +1,76 @@
+import React, { useState, useEffect } from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
 import DeclarationsPage from './pages/DeclarationsPage'
 import ImportPage from './pages/ImportPage'
 import StatsPage from './pages/StatsPage'
 
+function LoginModal({ onSuccess }: { onSuccess: () => void }) {
+  const [login, setLogin] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (login === 'Alex-admin' && password === 'nv4LTrWjtxEHkKZ04UfQ') {
+      localStorage.setItem('isAuthenticated', 'true')
+      onSuccess()
+    } else {
+      setError('Невірний логін або пароль')
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+      <div className="w-full max-w-md p-8 bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl">
+        <h2 className="text-2xl font-bold text-white mb-6 text-center">Авторизація в Customs CRM</h2>
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-1">Логін</label>
+            <input
+              type="text"
+              value={login}
+              onChange={(e) => setLogin(e.target.value)}
+              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-1">Пароль</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+              required
+            />
+          </div>
+          {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+          <button
+            type="submit"
+            className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg transition-colors"
+          >
+            Увійти
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
+  const [isAuth, setIsAuth] = useState(false)
+
+  useEffect(() => {
+    const authStatus = localStorage.getItem('isAuthenticated')
+    if (authStatus === 'true') {
+      setIsAuth(true)
+    }
+  }, [])
+
+  if (!isAuth) {
+    return <LoginModal onSuccess={() => setIsAuth(true)} />
+  }
+
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
       <nav className="bg-gray-900 border-b border-gray-800 px-6 py-3 flex items-center gap-6">

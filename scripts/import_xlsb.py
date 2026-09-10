@@ -14,7 +14,7 @@ except ImportError as e:
 
 FILE_PATH = sys.argv[1]
 JOB_ID = sys.argv[2]
-DATABASE_URL="postgresql://postgres:StN)hRvy9jIe0V1%25IgZ9%3C45nt9mpf*@localhost:5432/customs_crm"
+DATABASE_URL="postgresql://postgres:StN)hRvy9jIe0V1%25IgZ9%3C45nt9mpf*@localhost:5432/customs_crm?connection_limit=50&pool_timeout=30"
 
 BATCH_SIZE = 5000
 
