@@ -3,6 +3,7 @@ import { Routes, Route, NavLink } from 'react-router-dom'
 import DeclarationsPage from './pages/DeclarationsPage'
 import ImportPage from './pages/ImportPage'
 import StatsPage from './pages/StatsPage'
+import AnalyticsPage from './pages/AnalyticsPage'
 
 interface ImportJob {
   id: string
@@ -131,6 +132,9 @@ export default function App() {
           <NavLink to="/stats" className={({ isActive }) => isActive ? 'text-blue-400 font-medium' : 'text-gray-400 hover:text-gray-100'}>
             Статистика
           </NavLink>
+          <NavLink to="/analytics" className={({ isActive }) => isActive ? 'text-blue-400 font-medium' : 'text-gray-400 hover:text-gray-100'}>
+            Аналітика
+          </NavLink>
         </div>
 
         <div className="flex items-center gap-3 bg-gray-800/80 px-3 py-1.5 rounded-lg border border-gray-700/60">
@@ -159,6 +163,7 @@ export default function App() {
           <Route path="/" element={<DeclarationsPage />} />
           <Route path="/import" element={<ImportPage />} />
           <Route path="/stats" element={<StatsPage />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
         </Routes>
       </main>
     </div>

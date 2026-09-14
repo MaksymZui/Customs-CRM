@@ -3,6 +3,7 @@ import cors from 'cors'
 import { declarationsRouter } from './routes/declarations'
 import { importRouter } from './routes/import'
 import { statsRouter } from './routes/stats'
+import { analyticsRouter } from './routes/analytics'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -14,6 +15,7 @@ app.use(express.urlencoded({ limit: '500mb', extended: true }))
 app.use('/api/declarations', declarationsRouter)
 app.use('/api/import', importRouter)
 app.use('/api/stats', statsRouter)
+app.use('/api/analytics', analyticsRouter)
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
 

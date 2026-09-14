@@ -3,7 +3,6 @@ import prisma from '../lib/prisma'
 
 export const analyticsRouter = Router()
 
-// GET /api/analytics/uktved?code=8525890010&importId=xxx
 analyticsRouter.get('/uktved', async (req: Request, res: Response) => {
   try {
     let { code, importId = 'latest' } = req.query as Record<string, string>
@@ -18,21 +17,18 @@ analyticsRouter.get('/uktved', async (req: Request, res: Response) => {
       importId = latestJob ? latestJob.id : ''
     }
 
-    const where: Record<string, unknown> = {
-      product_code: { startsWith: code },
-    }
-    if (importId && importId !== 'all') {
-      where.import_id = importId
-    }
+    const importFilter = importId && importId !== 'all'
+      ? `AND import_id = '${importId}'`
+      : ''
 
-    const grouped = await prisma.$queryRaw<{
+    const grouped = await prisma.$queryRawUnsafe<{
       product_name: string
       count: bigint
       total_qty: number | null
       unit_name: string | null
       total_weight: number | null
       total_value_usd: number | null
-    }[]>`
+    }[]>(`
       SELECT
         product_name,
         COUNT(*) as count,
@@ -41,17 +37,21 @@ analyticsRouter.get('/uktved', async (req: Request, res: Response) => {
         SUM(weight_net) as total_weight,
         SUM(invoice_value_usd) as total_value_usd
       FROM declarations
-      WHERE product_code LIKE ${code + '%'}
-        ${importId && importId !== 'all'
-          ? prisma.$raw`AND import_id = ${importId}`
-          : prisma.$raw``
-        }
+      WHERE product_code LIKE '${code}%'
+        ${importFilter}
         AND product_name IS NOT NULL
         AND product_name != ''
       GROUP BY product_name
       ORDER BY total_value_usd DESC NULLS LAST
       LIMIT 200
-    `
+    `)
+
+    const where: Record<string, unknown> = {
+      product_code: { startsWith: code },
+    }
+    if (importId && importId !== 'all') {
+      where.import_id = importId
+    }
 
     const totals = await prisma.declaration.aggregate({
       where,
