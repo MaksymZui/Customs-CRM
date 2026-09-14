@@ -6,7 +6,7 @@ export const declarationsRouter = Router()
 const ALLOWED_SORT = new Set([
   'id', 'declaration_date', 'decl_num_prefix', 'customs_office',
   'trade_country', 'origin_country', 'product_code', 'recipient_name',
-  'weight_net', 'invoice_value_usd', 'customs_value_usd', 'duty_uah', 'vat_uah'
+  'recipient_code', 'weight_net', 'invoice_value_usd', 'customs_value_usd', 'duty_uah', 'vat_uah'
 ])
 
 declarationsRouter.get('/filters/options', async (_req: Request, res: Response) => {
@@ -41,6 +41,7 @@ declarationsRouter.get('/', async (req: Request, res: Response) => {
       origin_country,
       product_code,
       recipient_name,
+      recipient_code,
       sender_name,
       delivery_condition,
       currency_name,
@@ -54,9 +55,9 @@ declarationsRouter.get('/', async (req: Request, res: Response) => {
       search,
     } = req.query as Record<string, string>
 
-    // Если указано 'latest' или параметр пустой, находим ID самого последнего импорта
     if (!importId || importId === 'latest') {
       const latestJob = await prisma.importJob.findFirst({
+        where: { status: 'done' },
         orderBy: { created_at: 'desc' },
       })
       importId = latestJob ? latestJob.id : ''
@@ -69,7 +70,6 @@ declarationsRouter.get('/', async (req: Request, res: Response) => {
 
     const where: Record<string, unknown> = {}
 
-    // Фильтрация по конкретному импорту (если не выбрано 'all')
     if (importId && importId !== 'all') {
       where.import_id = importId
     }
@@ -80,6 +80,7 @@ declarationsRouter.get('/', async (req: Request, res: Response) => {
     if (product_code) where.product_code = { startsWith: product_code }
     if (decl_num_prefix) where.decl_num_prefix = { contains: decl_num_prefix, mode: 'insensitive' }
     if (recipient_name) where.recipient_name = { contains: recipient_name, mode: 'insensitive' }
+    if (recipient_code) where.recipient_code = { equals: parseFloat(recipient_code) }
     if (sender_name) where.sender_name = { contains: sender_name, mode: 'insensitive' }
     if (delivery_condition) where.delivery_condition = { in: delivery_condition.split(',') }
     if (currency_name) where.currency_name = { in: currency_name.split(',') }
@@ -111,7 +112,7 @@ declarationsRouter.get('/', async (req: Request, res: Response) => {
       ]
     }
 
-    const [data, total] = await Promise.all([
+    const [data, total, sums] = await Promise.all([
       prisma.declaration.findMany({
         where,
         orderBy: { [orderField]: orderDir },
@@ -128,6 +129,7 @@ declarationsRouter.get('/', async (req: Request, res: Response) => {
           origin_country: true,
           product_code: true,
           product_name: true,
+          recipient_code: true,
           recipient_name: true,
           sender_name: true,
           delivery_condition: true,
@@ -147,6 +149,16 @@ declarationsRouter.get('/', async (req: Request, res: Response) => {
         },
       }),
       prisma.declaration.count({ where }),
+      prisma.declaration.aggregate({
+        where,
+        _sum: {
+          invoice_value_usd: true,
+          customs_value_usd: true,
+          duty_uah: true,
+          vat_uah: true,
+          weight_net: true,
+        },
+      }),
     ])
 
     res.json({
@@ -156,6 +168,13 @@ declarationsRouter.get('/', async (req: Request, res: Response) => {
         limit: take,
         total,
         pages: Math.ceil(total / take),
+      },
+      sums: {
+        invoice_usd: Number(sums._sum.invoice_value_usd || 0),
+        customs_usd: Number(sums._sum.customs_value_usd || 0),
+        duty_uah: Number(sums._sum.duty_uah || 0),
+        vat_uah: Number(sums._sum.vat_uah || 0),
+        weight_net: Number(sums._sum.weight_net || 0),
       },
     })
   } catch (err) {

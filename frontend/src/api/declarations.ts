@@ -11,6 +11,7 @@ export interface Declaration {
   origin_country: string | null
   product_code: string | null
   product_name: string | null
+  recipient_code: number | null
   recipient_name: string | null
   sender_name: string | null
   delivery_condition: string | null
@@ -26,6 +27,15 @@ export interface Declaration {
   excise_uah: number | null
   vat_uah: number | null
   exchange_rate: number | null
+  import_id: string | null
+}
+
+export interface DeclarationSums {
+  invoice_usd: number
+  customs_usd: number
+  duty_uah: number
+  vat_uah: number
+  weight_net: number
 }
 
 export interface DeclarationsResponse {
@@ -36,6 +46,7 @@ export interface DeclarationsResponse {
     total: number
     pages: number
   }
+  sums: DeclarationSums
 }
 
 export interface FilterOptions {
@@ -57,6 +68,7 @@ export interface DeclarationFilters {
   origin_country?: string
   product_code?: string
   recipient_name?: string
+  recipient_code?: string
   sender_name?: string
   delivery_condition?: string
   currency_name?: string
