@@ -58,143 +58,98 @@ def parse_product(text):
     if not text:
         return None, None, None
 
-    text = str(text)
-    text = text.replace('\xa0', ' ')
+    text = str(text).replace('\xa0', ' ')
     text = re.sub(r'\s+', ' ', text).strip()
 
-    brand = None
-    model = None
+    # 1. ПОШУК КІЛЬКОСТІ
     qty = None
-
-    # ==================================================
-    # 1. КОЛИЧЕСТВО
-    # Берем число непосредственно перед ШТ / PCS / КОМПЛ
-    # ==================================================
-    qty_match = re.search(
-        r'(\d+(?:[.,]\d+)?)\s*(?:ШТ|PCS|КОМПЛ|ШТУК)\b',
-        text,
-        re.IGNORECASE
-    )
-
+    qty_match = re.search(r'\b(\d+(?:[\.,]\d+)?)\s*(?:ШТ|PCS|КОМПЛ|ШТУК|SET|шт\.?)\b', text, re.IGNORECASE)
     if qty_match:
         try:
             qty = float(qty_match.group(1).replace(',', '.'))
         except ValueError:
-            qty = None
+            pass
 
-    # ==================================================
-    # 2. БРЕНД
-    # Сначала ТОРГОВЕЛЬНА МАРКА / BRAND
-    # Если нет — ВИРОБНИК
-    # ==================================================
+    # 2. ПОШУК БРЕНДУ
+    brand = None
     brand_match = re.search(
-        r'(?:ТОРГОВЕЛЬНА МАРКА|ТОРГОВАЯ МАРКА|BRAND)\s*[:\-]?\s*'
-        r'(.+?)(?=\s+(?:КРАЇНА|КРАИНА|COUNTRY|ВИРОБНИК|'
-        r'ПРОИЗВОДИТЕЛЬ)\b|$)',
-        text,
-        re.IGNORECASE
-    )
-
+        r'(?:ТОРГОВЕЛЬН?А?\s+МАРКА|ТОРГОВЕЛЬНОЇ\s+МАРКИ|ТОРГОВАЯ МАРКА|\bТМ\b|\bBRAND\b|\bTRADEMARK\b)\s*[:\-\s=]+'
+        r'["«\']?([A-ZА-ЯІЇЄҐ0-9\s&\-\.]{2,50}?)["»\']?'
+        r'(?=\s*(?:[,\;\n]|\b(?:КРАЇНА|КРАИНА|COUNTRY|ВИРОБНИК|ПРОИЗВОДИТЕЛЬ|PRODUCER|МОДЕЛЬ|MODEL|АРТ|ART|КІЛЬКІСТЬ|НЕ\s+МІСТИТЬ|КОД)\b|$))',
+        text, re.IGNORECASE)
     if brand_match:
-        brand = brand_match.group(1).strip()
-
+        brand = brand_match.group(1).strip(' "\'«»:-.')
+        
     if not brand:
-        manufacturer_match = re.search(
-            r'(?:ВИРОБНИК|ПРОИЗВОДИТЕЛЬ)\s*[:\-]?\s*'
-            r'(.+?)(?=\s+(?:КРАЇНА|КРАИНА|COUNTRY)\b|$)',
-            text,
-            re.IGNORECASE
-        )
-
-        if manufacturer_match:
-            brand = manufacturer_match.group(1).strip()
-
+        mfg_match = re.search(
+            r'(?:ВИРОБНИК|ПРОИЗВОДИТЕЛЬ|MANUFACTURER|PRODUCER)\s*[:\-\s=]+'
+            r'["«\']?([A-ZА-ЯІЇЄҐ0-9\s&\-\.]{2,50}?)["»\']?'
+            r'(?=\s*(?:[,\;\n]|\b(?:КРАЇНА|КРАИНА|COUNTRY|ТОРГОВЕЛЬНА|BRAND|МОДЕЛЬ|MODEL|АРТ|ART|КІЛЬКІСТЬ|НЕ\s+МІСТИТЬ|КОД)\b|$))',
+            text, re.IGNORECASE)
+        if mfg_match:
+            brand = mfg_match.group(1).strip(' "\'«»:-.')
+            
     if brand:
         brand = re.sub(r'\s+', ' ', brand).strip()[:100]
+        if brand.upper() in ('НЕМАЄ', 'NO', 'WITHOUT', 'NONE', 'UA', 'CN'):
+            brand = None
 
-    # ==================================================
-    # 3. МОДЕЛЬ
-    # Сначала ищем явное "МОДЕЛЬ ..."
-    # ==================================================
-    model_match = re.search(
-        r'(?:МОДЕЛЬ|MODEL)\s+(.+?)'
-        r'(?=\s+(?:КРАЇНА|КРАИНА|COUNTRY|ВИРОБНИК|'
-        r'ПРОИЗВОДИТЕЛЬ)\b|'
-        r'\s+\d+(?:[.,]\d+)?\s*(?:ШТ|PCS|КОМПЛ|ШТУК)\b|$)',
-        text,
-        re.IGNORECASE
-    )
+    # 3. ПОШУК УСІХ МОДЕЛЕЙ (ЧЕРЕЗ КОМУ) З ВІДСІЧЕННЯМ СПЕЦИФІКАЦІЙ
+    text_upper = text.upper()
+    
+    stopwords = {
+        'CAMERA', 'КАМЕРА', 'КАМЕРИ', 'FPV', 'DRONE', 'QUADCOPTER',
+        'ART', 'АРТ', 'АРТИКУЛ', 'MODEL', 'МОДЕЛЬ', 'ITEM', 'NO',
+        'PCS', 'SET', 'ШТ', 'КОМПЛ', 'КІЛЬКІСТЬ', 'ШТУК',
+        'BRAND', 'TRADEMARK', 'ТМ', 'МАРКА', 'ТОРГОВЕЛЬНА', 'ТОРГОВАЯ',
+        'CN', 'UA', 'MADE', 'IN', 'ВИРОБНИК', 'ПРОИЗВОДИТЕЛЬ', 'КРАЇНА', 'КРАИНА', 'ВИРОБНИЦТВА', 'КОД',
+        'ММ', 'МКМ', 'ГЦ', 'РХ', 'PX', 'HZ', 'MM'
+    }
+    if brand:
+        stopwords.update(brand.upper().split())
 
-    if model_match:
-        model = model_match.group(1).strip()
+    # А. Замінюємо всі кириличні символи на розділювач '|'
+    text_clean = re.sub(r'[А-ЯІЇЄҐ]+', '|', text_upper)
 
-    # ==================================================
-    # 4. Если "МОДЕЛЬ" нет —
-    # ищем модель в названии перед АРТ
-    #
-    # Например:
-    # FPV КАМЕРА P6 PRO FPV CAMERA P6 PRO АРТ 6577 98 ШТ
-    #
-    # Берем P6 PRO, а не 6577 98
-    # ==================================================
-    if not model:
-        art_match = re.search(
-            r'(.+?)\s+АРТ\.?\s*[:#№]?\s*'
-            r'[A-ZА-ЯІЇЄҐ0-9][A-ZА-ЯІЇЄҐ0-9\-_./ ]*?'
-            r'\s+\d+\s*(?:ШТ|PCS|КОМПЛ|ШТУК)\b',
-            text,
-            re.IGNORECASE
-        )
+    # Б. Видаляємо знайдену кількість із тексту
+    if qty is not None:
+        qty_str = str(int(qty)) if float(qty).is_integer() else str(qty)
+        text_clean = re.sub(rf'\b{qty_str}\b', '|', text_clean)
 
-        if art_match:
-            before_art = art_match.group(1).strip()
+    # В. Видаляємо всі стоп-слова
+    for w in stopwords:
+        text_clean = re.sub(rf'\b{w}\b', '|', text_clean)
 
-            # Ищем последние слова, похожие на модель:
-            # P6 PRO
-            # HMD PULSE
-            # ABC-123
-            candidates = re.findall(
-                r'\b[A-ZА-ЯІЇЄҐ0-9][A-ZА-ЯІЇЄҐ0-9\-_]*(?:\s+[A-ZА-ЯІЇЄҐ0-9][A-ZА-ЯІЇЄҐ0-9\-_]*){0,3}\b',
-                before_art,
-                re.IGNORECASE
-            )
+    # Г. Розбиваємо текст на частини по розділювачу '|'
+    raw_models = [m.strip(' -./_') for m in text_clean.split('|')]
+    
+    valid_models = []
+    for m in raw_models:
+        m = re.sub(r'\s+', ' ', m).strip()
+        
+        # Фільтр: відкидаємо сміття
+        if len(m) < 2:
+            continue
+        if re.fullmatch(r'[\d\s\.\,\-]+', m):  # Тільки цифри та символи (напр. 8806 або 9 1)
+            continue
+        if re.search(r'\d+\s*[XХ]\s*\d+', m): # Роздільна здатність (960X768)
+            continue
+        if re.match(r'^F\s*[\d\.\,]+$', m):   # Діафрагма (F 1 0)
+            continue
+            
+        if re.search(r'[A-Z0-9]', m) and m not in valid_models:
+            valid_models.append(m)
 
-            # Убираем очевидный мусор
-            candidates = [
-                x.strip()
-                for x in candidates
-                if len(x.strip()) >= 2
-                and x.upper() not in {
-                    'АРТ', 'КАМЕРА', 'КАМЕРИ', 'FPV',
-                    'CAMERA', 'MODULE', 'IP', 'CCTV',
-                    'HMD', 'ДЛЯ'
-                }
-            ]
+    # Д. Додатковий примусовий пошук артикулу (якщо він пропущений)
+    art_match = re.search(r'(?:АРТИКУЛ|АРТ\.?|ART\.?|МОДЕЛЬ|MODEL)\s*[:\-\s#№]+["«\']?([A-Z0-9\-\./_]{2,30})', text, re.IGNORECASE)
+    if art_match:
+        explicit_art = art_match.group(1).strip(' "\'«»:-.')
+        if explicit_art and explicit_art not in valid_models and not re.fullmatch(r'[\d\s\.\,\-]+', explicit_art):
+            valid_models.append(explicit_art)
 
-            if candidates:
-                # Берем последний подходящий кандидат
-                model = candidates[-1]
-
+    model = ", ".join(valid_models) if valid_models else None
     if model:
-        model = re.sub(r'\s+', ' ', model).strip()
-
-        # Если каким-то образом количество попало в модель,
-        # убираем его с конца.
-        if qty is not None:
-            qty_str = (
-                str(int(qty))
-                if float(qty).is_integer()
-                else str(qty)
-            )
-
-            model = re.sub(
-                rf'\s+{re.escape(qty_str)}$',
-                '',
-                model,
-                flags=re.IGNORECASE
-            ).strip()
-
-        model = model[:100]
+        model = model[:150]
 
     return brand, model, qty
 

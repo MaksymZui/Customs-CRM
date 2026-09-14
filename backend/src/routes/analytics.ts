@@ -9,6 +9,10 @@ analyticsRouter.get('/uktved', async (req: Request, res: Response) => {
 
     if (!code) return res.status(400).json({ error: 'code is required' })
 
+    // Очищаємо код від усіх нецифрових символів
+    const cleanCode = code.replace(/\D/g, '')
+    if (!cleanCode) return res.status(400).json({ error: 'invalid code' })
+
     if (!importId || importId === 'latest') {
       const latestJob = await prisma.importJob.findFirst({
         where: { status: 'done' },
@@ -21,7 +25,6 @@ analyticsRouter.get('/uktved', async (req: Request, res: Response) => {
       ? `AND import_id = '${importId}'`
       : ''
 
-    // Групування по бренду і моделі
     const byBrandModel = await prisma.$queryRawUnsafe<{
       brand: string | null
       model: string | null
@@ -40,7 +43,7 @@ analyticsRouter.get('/uktved', async (req: Request, res: Response) => {
         SUM(weight_net) as total_weight,
         SUM(invoice_value_usd) as total_value_usd
       FROM declarations
-      WHERE product_code LIKE '${code}%'
+      WHERE product_code LIKE '${cleanCode}%'
         ${importFilter}
         AND product_name IS NOT NULL
         AND product_name != ''
@@ -49,7 +52,6 @@ analyticsRouter.get('/uktved', async (req: Request, res: Response) => {
       LIMIT 200
     `)
 
-    // Групування по унікальній назві товару (як раніше)
     const byProductName = await prisma.$queryRawUnsafe<{
       product_name: string
       count: bigint
@@ -66,7 +68,7 @@ analyticsRouter.get('/uktved', async (req: Request, res: Response) => {
         SUM(weight_net) as total_weight,
         SUM(invoice_value_usd) as total_value_usd
       FROM declarations
-      WHERE product_code LIKE '${code}%'
+      WHERE product_code LIKE '${cleanCode}%'
         ${importFilter}
         AND product_name IS NOT NULL
         AND product_name != ''
@@ -76,7 +78,7 @@ analyticsRouter.get('/uktved', async (req: Request, res: Response) => {
     `)
 
     const where: Record<string, unknown> = {
-      product_code: { startsWith: code },
+      product_code: { startsWith: cleanCode },
     }
     if (importId && importId !== 'all') {
       where.import_id = importId
@@ -94,7 +96,7 @@ analyticsRouter.get('/uktved', async (req: Request, res: Response) => {
     })
 
     res.json({
-      code,
+      code: cleanCode,
       by_brand_model: byBrandModel.map(r => ({
         brand: r.brand || '—',
         model: r.model || '—',
