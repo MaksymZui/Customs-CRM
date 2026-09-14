@@ -6,7 +6,8 @@ export const declarationsRouter = Router()
 const ALLOWED_SORT = new Set([
   'id', 'declaration_date', 'decl_num_prefix', 'customs_office',
   'trade_country', 'origin_country', 'product_code', 'recipient_name',
-  'recipient_code', 'weight_net', 'invoice_value_usd', 'customs_value_usd', 'duty_uah', 'vat_uah'
+  'recipient_code', 'weight_net', 'invoice_value_usd', 'customs_value_usd', 'duty_uah', 'vat_uah',
+  'brand', 'model', 'qty_parsed' // Додано для сортування за бажанням
 ])
 
 declarationsRouter.get('/filters/options', async (_req: Request, res: Response) => {
@@ -112,7 +113,7 @@ declarationsRouter.get('/', async (req: Request, res: Response) => {
       ]
     }
 
-    const [data, total, sums] = await Promise.all([
+  const [data, total, sums] = await Promise.all([
       prisma.declaration.findMany({
         where,
         orderBy: { [orderField]: orderDir },
@@ -146,6 +147,12 @@ declarationsRouter.get('/', async (req: Request, res: Response) => {
           vat_uah: true,
           exchange_rate: true,
           import_id: true,
+          // Додаємо нові поля, щоб вони приходили в API:
+          brand: true,
+          model: true,
+          qty_parsed: true,
+          add_unit_qty: true,
+          add_unit_name: true,
         },
       }),
       prisma.declaration.count({ where }),

@@ -28,6 +28,12 @@ export interface Declaration {
   vat_uah: number | null
   exchange_rate: number | null
   import_id: string | null
+  // Додайте ці поля до інтерфейсу:
+  brand: string | null
+  model: string | null
+  qty_parsed: number | null
+  add_unit_qty: number | null
+  add_unit_name: string | null
 }
 
 export interface DeclarationSums {

@@ -387,6 +387,22 @@ export default function DeclarationsPage() {
                               <span className="text-gray-500">Назва товару:</span>
                               <p className="text-gray-200 mt-1 leading-relaxed">{row.product_name || '—'}</p>
                             </div>
+                            <div className="flex flex-wrap gap-4 pt-2 border-t border-gray-800/80">
+                            <div>
+                              <span className="text-gray-500">Бренд:</span>{' '}
+                              <span className="text-blue-400 font-medium">{row.brand || '—'}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Модель:</span>{' '}
+                              <span className="text-emerald-400 font-medium">{row.model || '—'}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Розпарсена кількість:</span>{' '}
+                              <span className="text-amber-400 font-medium">
+                                {row.qty_parsed ? `${row.qty_parsed} шт` : (row.add_unit_qty ? `${row.add_unit_qty} ${row.add_unit_name || 'шт'}` : '—')}
+                              </span>
+                            </div>
+                          </div>
                           </div>
                         </td>
                       </tr>

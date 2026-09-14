@@ -58,46 +58,143 @@ def parse_product(text):
     if not text:
         return None, None, None
 
+    text = str(text)
+    text = text.replace('\xa0', ' ')
+    text = re.sub(r'\s+', ' ', text).strip()
+
     brand = None
     model = None
     qty = None
 
-    # Бренд — після ТОРГОВЕЛЬНА МАРКА або подібних
-    brand_match = re.search(
-        r'(?:ТОРГОВЕЛЬНА МАРКА|ТОРГОВАЯ МАРКА|ТОРГОВА МАРКА|BRAND)[:\s]+([A-ZА-ЯІЇЄҐA-Z0-9][A-ZА-ЯІЇЄҐA-Z0-9\s\-\.]{1,30}?)(?:\s+(?:КРАЇНА|COUNTRY|ВИРОБНИК|КОД|$))',
-        text, re.IGNORECASE
-    )
-    if brand_match:
-        brand = brand_match.group(1).strip()[:100]
-
-    # Виробник якщо бренд не знайдено
-    if not brand:
-        prod_match = re.search(
-            r'(?:ВИРОБНИК|ПРОИЗВОДИТЕЛЬ)[:\s]+([A-ZА-ЯІЇЄҐA-Z0-9][A-ZА-ЯІЇЄҐA-Z0-9\s\-\.]{1,30}?)(?:\s+(?:КРАЇНА|COUNTRY|КОД|$))',
-            text, re.IGNORECASE
-        )
-        if prod_match:
-            brand = prod_match.group(1).strip()[:100]
-
-    # Модель — після MODEL або АРТ
-    model_match = re.search(
-        r'(?:MODEL|МОДЕЛЬ|АРТ\.?|ART\.?)[:\s#№]+([A-Z0-9][A-Z0-9\-\.\/\s]{1,40}?)(?:\s+(?:ШТ|КГ|КОМПЛ|PCS|$|\d{3,}))',
-        text, re.IGNORECASE
-    )
-    if model_match:
-        model = model_match.group(1).strip()[:100]
-
-    # Кількість — число перед ШТ або PCS або КОМПЛ
+    # ==================================================
+    # 1. КОЛИЧЕСТВО
+    # Берем число непосредственно перед ШТ / PCS / КОМПЛ
+    # ==================================================
     qty_match = re.search(
-        r'(\d[\d\s]{0,8}\d|\d+)\s*(?:ШТ|PCS|КОМПЛ|ШТУК|шт\.?)',
-        text, re.IGNORECASE
+        r'(\d+(?:[.,]\d+)?)\s*(?:ШТ|PCS|КОМПЛ|ШТУК)\b',
+        text,
+        re.IGNORECASE
     )
+
     if qty_match:
-        qty_str = qty_match.group(1).replace(' ', '')
         try:
-            qty = float(qty_str)
-        except Exception:
+            qty = float(qty_match.group(1).replace(',', '.'))
+        except ValueError:
             qty = None
+
+    # ==================================================
+    # 2. БРЕНД
+    # Сначала ТОРГОВЕЛЬНА МАРКА / BRAND
+    # Если нет — ВИРОБНИК
+    # ==================================================
+    brand_match = re.search(
+        r'(?:ТОРГОВЕЛЬНА МАРКА|ТОРГОВАЯ МАРКА|BRAND)\s*[:\-]?\s*'
+        r'(.+?)(?=\s+(?:КРАЇНА|КРАИНА|COUNTRY|ВИРОБНИК|'
+        r'ПРОИЗВОДИТЕЛЬ)\b|$)',
+        text,
+        re.IGNORECASE
+    )
+
+    if brand_match:
+        brand = brand_match.group(1).strip()
+
+    if not brand:
+        manufacturer_match = re.search(
+            r'(?:ВИРОБНИК|ПРОИЗВОДИТЕЛЬ)\s*[:\-]?\s*'
+            r'(.+?)(?=\s+(?:КРАЇНА|КРАИНА|COUNTRY)\b|$)',
+            text,
+            re.IGNORECASE
+        )
+
+        if manufacturer_match:
+            brand = manufacturer_match.group(1).strip()
+
+    if brand:
+        brand = re.sub(r'\s+', ' ', brand).strip()[:100]
+
+    # ==================================================
+    # 3. МОДЕЛЬ
+    # Сначала ищем явное "МОДЕЛЬ ..."
+    # ==================================================
+    model_match = re.search(
+        r'(?:МОДЕЛЬ|MODEL)\s+(.+?)'
+        r'(?=\s+(?:КРАЇНА|КРАИНА|COUNTRY|ВИРОБНИК|'
+        r'ПРОИЗВОДИТЕЛЬ)\b|'
+        r'\s+\d+(?:[.,]\d+)?\s*(?:ШТ|PCS|КОМПЛ|ШТУК)\b|$)',
+        text,
+        re.IGNORECASE
+    )
+
+    if model_match:
+        model = model_match.group(1).strip()
+
+    # ==================================================
+    # 4. Если "МОДЕЛЬ" нет —
+    # ищем модель в названии перед АРТ
+    #
+    # Например:
+    # FPV КАМЕРА P6 PRO FPV CAMERA P6 PRO АРТ 6577 98 ШТ
+    #
+    # Берем P6 PRO, а не 6577 98
+    # ==================================================
+    if not model:
+        art_match = re.search(
+            r'(.+?)\s+АРТ\.?\s*[:#№]?\s*'
+            r'[A-ZА-ЯІЇЄҐ0-9][A-ZА-ЯІЇЄҐ0-9\-_./ ]*?'
+            r'\s+\d+\s*(?:ШТ|PCS|КОМПЛ|ШТУК)\b',
+            text,
+            re.IGNORECASE
+        )
+
+        if art_match:
+            before_art = art_match.group(1).strip()
+
+            # Ищем последние слова, похожие на модель:
+            # P6 PRO
+            # HMD PULSE
+            # ABC-123
+            candidates = re.findall(
+                r'\b[A-ZА-ЯІЇЄҐ0-9][A-ZА-ЯІЇЄҐ0-9\-_]*(?:\s+[A-ZА-ЯІЇЄҐ0-9][A-ZА-ЯІЇЄҐ0-9\-_]*){0,3}\b',
+                before_art,
+                re.IGNORECASE
+            )
+
+            # Убираем очевидный мусор
+            candidates = [
+                x.strip()
+                for x in candidates
+                if len(x.strip()) >= 2
+                and x.upper() not in {
+                    'АРТ', 'КАМЕРА', 'КАМЕРИ', 'FPV',
+                    'CAMERA', 'MODULE', 'IP', 'CCTV',
+                    'HMD', 'ДЛЯ'
+                }
+            ]
+
+            if candidates:
+                # Берем последний подходящий кандидат
+                model = candidates[-1]
+
+    if model:
+        model = re.sub(r'\s+', ' ', model).strip()
+
+        # Если каким-то образом количество попало в модель,
+        # убираем его с конца.
+        if qty is not None:
+            qty_str = (
+                str(int(qty))
+                if float(qty).is_integer()
+                else str(qty)
+            )
+
+            model = re.sub(
+                rf'\s+{re.escape(qty_str)}$',
+                '',
+                model,
+                flags=re.IGNORECASE
+            ).strip()
+
+        model = model[:100]
 
     return brand, model, qty
 
