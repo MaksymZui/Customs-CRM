@@ -2,7 +2,7 @@
 import sys
 import os
 import io
-import csv
+import re
 from datetime import datetime
 
 try:
@@ -43,6 +43,7 @@ COLUMNS = [
     "customs_value_uah", "customs_value_usd",
     "customs_value_per_kg",
     "duty_uah", "excise_uah", "vat_uah",
+    "brand", "model", "qty_parsed",
 ]
 
 def clean(val):
@@ -52,6 +53,53 @@ def clean(val):
         return val
     s = str(val).replace('\xa0', ' ').replace('\x00', '').strip()
     return s if s else None
+
+def parse_product(text):
+    if not text:
+        return None, None, None
+
+    brand = None
+    model = None
+    qty = None
+
+    # Бренд — після ТОРГОВЕЛЬНА МАРКА або подібних
+    brand_match = re.search(
+        r'(?:ТОРГОВЕЛЬНА МАРКА|ТОРГОВАЯ МАРКА|ТОРГОВА МАРКА|BRAND)[:\s]+([A-ZА-ЯІЇЄҐA-Z0-9][A-ZА-ЯІЇЄҐA-Z0-9\s\-\.]{1,30}?)(?:\s+(?:КРАЇНА|COUNTRY|ВИРОБНИК|КОД|$))',
+        text, re.IGNORECASE
+    )
+    if brand_match:
+        brand = brand_match.group(1).strip()[:100]
+
+    # Виробник якщо бренд не знайдено
+    if not brand:
+        prod_match = re.search(
+            r'(?:ВИРОБНИК|ПРОИЗВОДИТЕЛЬ)[:\s]+([A-ZА-ЯІЇЄҐA-Z0-9][A-ZА-ЯІЇЄҐA-Z0-9\s\-\.]{1,30}?)(?:\s+(?:КРАЇНА|COUNTRY|КОД|$))',
+            text, re.IGNORECASE
+        )
+        if prod_match:
+            brand = prod_match.group(1).strip()[:100]
+
+    # Модель — після MODEL або АРТ
+    model_match = re.search(
+        r'(?:MODEL|МОДЕЛЬ|АРТ\.?|ART\.?)[:\s#№]+([A-Z0-9][A-Z0-9\-\.\/\s]{1,40}?)(?:\s+(?:ШТ|КГ|КОМПЛ|PCS|$|\d{3,}))',
+        text, re.IGNORECASE
+    )
+    if model_match:
+        model = model_match.group(1).strip()[:100]
+
+    # Кількість — число перед ШТ або PCS або КОМПЛ
+    qty_match = re.search(
+        r'(\d[\d\s]{0,8}\d|\d+)\s*(?:ШТ|PCS|КОМПЛ|ШТУК|шт\.?)',
+        text, re.IGNORECASE
+    )
+    if qty_match:
+        qty_str = qty_match.group(1).replace(' ', '')
+        try:
+            qty = float(qty_str)
+        except Exception:
+            qty = None
+
+    return brand, model, qty
 
 def update_job(conn, status=None, processed=None, total=None, error=None):
     with conn.cursor() as cur:
@@ -117,7 +165,10 @@ def main():
                     while len(vals) < 54:
                         vals.append(None)
 
-                    row_data = [clean(v) for v in vals[:53]] + [JOB_ID]
+                    cleaned = [clean(v) for v in vals[:53]]
+                    product_text = str(vals[30]) if vals[30] else ''
+                    brand, model, qty_parsed = parse_product(product_text)
+                    row_data = cleaned + [brand, model, qty_parsed, JOB_ID]
                     batch.append(row_data)
 
                     if len(batch) >= BATCH_SIZE:

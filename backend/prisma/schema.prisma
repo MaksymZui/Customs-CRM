@@ -79,6 +79,10 @@ model Declaration {
   excise_uah        Float?
   vat_uah           Float?
 
+  brand        String?
+  model        String?
+  qty_parsed   Float?
+
   import_id  String?
   created_at DateTime @default(now())
 

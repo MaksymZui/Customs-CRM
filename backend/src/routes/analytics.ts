@@ -21,7 +21,36 @@ analyticsRouter.get('/uktved', async (req: Request, res: Response) => {
       ? `AND import_id = '${importId}'`
       : ''
 
-    const grouped = await prisma.$queryRawUnsafe<{
+    // Групування по бренду і моделі
+    const byBrandModel = await prisma.$queryRawUnsafe<{
+      brand: string | null
+      model: string | null
+      count: bigint
+      total_qty: number | null
+      unit_name: string | null
+      total_weight: number | null
+      total_value_usd: number | null
+    }[]>(`
+      SELECT
+        brand,
+        model,
+        COUNT(*) as count,
+        SUM(COALESCE(qty_parsed, add_unit_qty)) as total_qty,
+        MAX(add_unit_name) as unit_name,
+        SUM(weight_net) as total_weight,
+        SUM(invoice_value_usd) as total_value_usd
+      FROM declarations
+      WHERE product_code LIKE '${code}%'
+        ${importFilter}
+        AND product_name IS NOT NULL
+        AND product_name != ''
+      GROUP BY brand, model
+      ORDER BY total_value_usd DESC NULLS LAST
+      LIMIT 200
+    `)
+
+    // Групування по унікальній назві товару (як раніше)
+    const byProductName = await prisma.$queryRawUnsafe<{
       product_name: string
       count: bigint
       total_qty: number | null
@@ -32,7 +61,7 @@ analyticsRouter.get('/uktved', async (req: Request, res: Response) => {
       SELECT
         product_name,
         COUNT(*) as count,
-        SUM(add_unit_qty) as total_qty,
+        SUM(COALESCE(qty_parsed, add_unit_qty)) as total_qty,
         MAX(add_unit_name) as unit_name,
         SUM(weight_net) as total_weight,
         SUM(invoice_value_usd) as total_value_usd
@@ -57,6 +86,7 @@ analyticsRouter.get('/uktved', async (req: Request, res: Response) => {
       where,
       _count: { id: true },
       _sum: {
+        qty_parsed: true,
         add_unit_qty: true,
         weight_net: true,
         invoice_value_usd: true,
@@ -65,7 +95,16 @@ analyticsRouter.get('/uktved', async (req: Request, res: Response) => {
 
     res.json({
       code,
-      rows: grouped.map(r => ({
+      by_brand_model: byBrandModel.map(r => ({
+        brand: r.brand || '—',
+        model: r.model || '—',
+        count: Number(r.count),
+        total_qty: r.total_qty ? Number(r.total_qty) : null,
+        unit_name: r.unit_name,
+        total_weight: r.total_weight ? Number(r.total_weight) : null,
+        total_value_usd: r.total_value_usd ? Number(r.total_value_usd) : null,
+      })),
+      by_product_name: byProductName.map(r => ({
         product_name: r.product_name,
         count: Number(r.count),
         total_qty: r.total_qty ? Number(r.total_qty) : null,
@@ -75,7 +114,11 @@ analyticsRouter.get('/uktved', async (req: Request, res: Response) => {
       })),
       totals: {
         declarations: totals._count.id,
-        total_qty: totals._sum.add_unit_qty ? Number(totals._sum.add_unit_qty) : null,
+        total_qty: totals._sum.qty_parsed
+          ? Number(totals._sum.qty_parsed)
+          : totals._sum.add_unit_qty
+          ? Number(totals._sum.add_unit_qty)
+          : null,
         total_weight: totals._sum.weight_net ? Number(totals._sum.weight_net) : null,
         total_value_usd: totals._sum.invoice_value_usd ? Number(totals._sum.invoice_value_usd) : null,
       },
