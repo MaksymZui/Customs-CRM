@@ -109,3 +109,17 @@ model ImportJob {
 
   @@map("import_jobs")
 }
+
+model AiCache {
+  id           Int      @id @default(autoincrement())
+  product_hash String
+  product_name String
+  brand        String?
+  model        String?
+  qty          Float?
+  unit         String?
+  created_at   DateTime @default(now())
+
+  @@index([product_hash])
+  @@map("ai_cache")
+}

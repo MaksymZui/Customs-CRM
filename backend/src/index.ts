@@ -4,6 +4,7 @@ import { declarationsRouter } from './routes/declarations'
 import { importRouter } from './routes/import'
 import { statsRouter } from './routes/stats'
 import { analyticsRouter } from './routes/analytics'
+import { aiRouter } from './routes/ai'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -16,6 +17,7 @@ app.use('/api/declarations', declarationsRouter)
 app.use('/api/import', importRouter)
 app.use('/api/stats', statsRouter)
 app.use('/api/analytics', analyticsRouter)
+app.use('/api/ai', aiRouter)
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
 
