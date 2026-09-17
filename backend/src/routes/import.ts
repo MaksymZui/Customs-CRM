@@ -3,7 +3,7 @@ import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
 import { v4 as uuidv4 } from 'uuid'
-import { exec } from 'child_process'
+import { spawn } from 'child_process'
 import prisma from '../lib/prisma'
 
 export const importRouter = Router()
@@ -46,17 +46,52 @@ importRouter.post('/', upload.single('file'), async (req: Request, res: Response
   const filePath = req.file.path
   const jobId = job.id
 
-  let cmd: string
+  // ВАЖЛИВО: spawn замість exec.
+  // exec() буферизує ВЕСЬ stdout/stderr дочірнього процесу в пам'яті
+  // Node (родом з maxBuffer, за замовчуванням 1MB, але сам факт
+  // буферизації тримає дані в heap, поки процес живий). При
+  // ~876k рядків і print() на кожен батч це й давало витік пам'яті
+  // в customs-crm backend (спостерігали RSS 3.4GB на процесі,
+  // хоча V8 heap лишався малим — витік був саме в native-буферах
+  // навколо child_process, не в JS-об'єктах).
+  //
+  // spawn() зі stdio: 'ignore' взагалі не створює pipe/buffer для
+  // виводу дочірнього процесу — Node про нього нічого не знає.
+  // detached: true + unref() повністю відв'язують дочірній процес:
+  // він продовжує жити і після завершення HTTP-відповіді, і навіть
+  // якщо backend перезапуститься.
+
+  let child: ReturnType<typeof spawn>
+
   if (isWindows) {
     const scriptPath = path.resolve(process.cwd(), '..', 'scripts', 'import_xlsb.py')
-    const dbUrl = process.env.DATABASE_URL || ''
-    cmd = `python "${scriptPath}" "${filePath}" "${jobId}"`
-    exec(cmd, { env: { ...process.env, DATABASE_URL: dbUrl } }).unref()
+    child = spawn('python', [scriptPath, filePath, jobId], {
+      env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL || '' },
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    })
   } else {
     const wrapperPath = path.resolve(process.cwd(), '..', 'scripts', 'run_import.sh')
-    cmd = `bash "${wrapperPath}" "${filePath}" "${jobId}"`
-    exec(cmd).unref()
+    child = spawn('bash', [wrapperPath, filePath, jobId], {
+      detached: true,
+      stdio: 'ignore',
+    })
   }
+
+  // Ловимо лише помилку запуску процесу (напр. файл скрипта не
+  // знайдено) — це НЕ підписка на stdout/stderr, витоку не створює.
+  child.on('error', (err) => {
+    console.error(`Failed to start import process for job ${jobId}:`, err)
+    prisma.importJob
+      .update({
+        where: { id: jobId },
+        data: { status: 'error', error: `spawn failed: ${err.message}` },
+      })
+      .catch(() => {})
+  })
+
+  child.unref()
 
   res.json({ job_id: job.id })
 })
