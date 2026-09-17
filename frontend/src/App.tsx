@@ -103,9 +103,12 @@ export default function App() {
         .catch(err => console.error(err))
     }
 
+    // Загружаем список один раз при входе
     loadJobs()
-    const interval = setInterval(loadJobs, 10000)
-    return () => clearInterval(interval)
+
+    // Перезагружаем список ТОЛЬКО когда произошло событие импорта нового файла
+    window.addEventListener('importFilterChanged', loadJobs)
+    return () => window.removeEventListener('importFilterChanged', loadJobs)
   }, [isAuth])
 
   const handleImportChange = (e: React.ChangeEvent<HTMLSelectElement>) => {

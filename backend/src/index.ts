@@ -1,5 +1,6 @@
 import express from 'express'
 import cors from 'cors'
+import prisma from './lib/prisma'
 import { declarationsRouter } from './routes/declarations'
 import { importRouter } from './routes/import'
 import { statsRouter } from './routes/stats'
@@ -9,7 +10,7 @@ import { aiRouter } from './routes/ai'
 const app = express()
 const PORT = process.env.PORT || 3001
 
-app.use(cors({ origin: 'http://localhost:5173' }))
+app.use(cors({ origin: '*' }))
 app.use(express.json({ limit: '500mb' }))
 app.use(express.urlencoded({ limit: '500mb', extended: true }))
 
@@ -42,3 +43,16 @@ const server = app.listen(PORT, () => {
 })
 
 server.setTimeout(600000)
+
+// Корректное завершение работы (Graceful Shutdown) для освобождения пула PostgreSQL
+const shutdown = async (signal: string) => {
+  console.log(`\nReceived ${signal}. Closing HTTP server and Prisma client...`)
+  server.close(async () => {
+    await prisma.$disconnect()
+    console.log('PostgreSQL pool disconnected. Server shut down cleanly.')
+    process.exit(0)
+  })
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'))
+process.on('SIGINT', () => shutdown('SIGINT'))

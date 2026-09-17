@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { createHash } from 'crypto'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { Prisma } from '@prisma/client'
 import prisma from '../lib/prisma'
 
 export const aiRouter = Router()
@@ -42,8 +43,13 @@ ${productNames.map((name, i) => `${i}. ${name.substring(0, 800)}`).join('\n')}
   const text = result.response.text().trim()
   const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
   
-  const parsed: ParsedItem[] = JSON.parse(clean)
-  return parsed
+  try {
+    const parsed: ParsedItem[] = JSON.parse(clean)
+    return parsed
+  } catch (e) {
+    console.error('Failed to parse Gemini response JSON:', clean)
+    return []
+  }
 }
 
 aiRouter.post('/analyze-uktved', async (req: Request, res: Response) => {
@@ -65,7 +71,9 @@ aiRouter.post('/analyze-uktved', async (req: Request, res: Response) => {
       product_name: { not: null },
     }
     if (importId && importId !== 'all') where.import_id = importId
-    if (recipient_code) where.recipient_code = parseFloat(recipient_code)
+    if (recipient_code && !isNaN(parseFloat(recipient_code))) {
+      where.recipient_code = parseFloat(recipient_code)
+    }
     if (date_from || date_to) {
       where.declaration_date = {
         ...(date_from ? { gte: parseExcelDate(date_from) } : {}),
@@ -73,7 +81,6 @@ aiRouter.post('/analyze-uktved', async (req: Request, res: Response) => {
       }
     }
 
-    // Отримуємо унікальні product_name
     const rows = await prisma.declaration.findMany({
       where,
       select: { product_name: true },
@@ -88,7 +95,6 @@ aiRouter.post('/analyze-uktved', async (req: Request, res: Response) => {
 
     const hashes = uniqueNames.map(n => hashText(n))
 
-    // Перевіряємо які вже є в кеші
     const cached = await prisma.aiCache.findMany({
       where: { product_hash: { in: hashes } },
     })
@@ -101,7 +107,7 @@ aiRouter.post('/analyze-uktved', async (req: Request, res: Response) => {
       }
     }
 
-    // Обробляємо нові через Gemini батчами по 15
+    // Обработка пакетами по 15 штук
     const BATCH = 15
     for (let i = 0; i < toProcess.length; i += BATCH) {
       const batch = toProcess.slice(i, i + BATCH)
@@ -110,52 +116,59 @@ aiRouter.post('/analyze-uktved', async (req: Request, res: Response) => {
       try {
         const parsed = await parseWithGemini(names)
 
-        // Групуємо результати по index
         const byIndex = new Map<number, ParsedItem[]>()
         for (const item of parsed) {
           if (!byIndex.has(item.index)) byIndex.set(item.index, [])
           byIndex.get(item.index)!.push(item)
         }
 
-        // Зберігаємо в кеш
+        // Формируем единый батч данных для записи
+        const recordsToInsert: any[] = []
+        const hashesToDelete: string[] = []
+
         for (let j = 0; j < batch.length; j++) {
           const batchItem = batch[j]
           const items = byIndex.get(j) || [{ index: j, brand: null, model: null, qty: null, unit: null }]
 
-          // Спочатку видаляємо старі записи для цього хешу
-          await prisma.aiCache.deleteMany({ where: { product_hash: batchItem.hash } })
+          hashesToDelete.push(batchItem.hash)
 
-          // Зберігаємо всі моделі
-          await prisma.aiCache.createMany({
-            data: items.map(item => ({
+          for (const item of items) {
+            recordsToInsert.push({
               product_hash: batchItem.hash,
               product_name: batchItem.name,
               brand: item.brand,
               model: item.model,
               qty: item.qty,
               unit: item.unit,
-            })),
-          })
+            })
+          }
+        }
+
+        // Пакетное удаление и пакетная вставка (экономит подключения и память)
+        if (hashesToDelete.length > 0) {
+          await prisma.aiCache.deleteMany({ where: { product_hash: { in: hashesToDelete } } })
+        }
+        if (recordsToInsert.length > 0) {
+          await prisma.aiCache.createMany({ data: recordsToInsert })
         }
       } catch (err) {
         console.error('Gemini batch error:', err)
       }
     }
 
-    // Агрегуємо результати через JOIN
-    const importFilter = importId && importId !== 'all' ? `AND d.import_id = '${importId}'` : ''
-    const recipientFilter = recipient_code ? `AND d.recipient_code = ${parseFloat(recipient_code)}` : ''
-    const dateFromFilter = date_from ? `AND d.declaration_date >= ${parseExcelDate(date_from)}` : ''
-    const dateToFilter = date_to ? `AND d.declaration_date <= ${parseExcelDate(date_to)}` : ''
+    // Безопасный SQL-запрос через Prisma.sql
+    const parsedRecipient = recipient_code ? parseFloat(recipient_code) : null
+    const parsedDateFrom = date_from ? parseExcelDate(date_from) : null
+    const parsedDateTo = date_to ? parseExcelDate(date_to) : null
 
-    const aggRows = await prisma.$queryRawUnsafe<{
+    const aggRows = await prisma.$queryRaw<{
       brand: string | null
       model: string | null
       count: bigint
       total_qty: number | null
       total_weight: number | null
       total_value_usd: number | null
-    }[]>(`
+    }[]>(Prisma.sql`
       SELECT
         ac.brand,
         ac.model,
@@ -168,11 +181,11 @@ aiRouter.post('/analyze-uktved', async (req: Request, res: Response) => {
         SUM(d.invoice_value_usd) as total_value_usd
       FROM declarations d
       JOIN ai_cache ac ON md5(d.product_name) = ac.product_hash
-      WHERE d.product_code LIKE '${code}%'
-        ${importFilter}
-        ${recipientFilter}
-        ${dateFromFilter}
-        ${dateToFilter}
+      WHERE d.product_code LIKE ${code + '%'}
+        ${importId && importId !== 'all' ? Prisma.sql`AND d.import_id = ${importId}` : Prisma.empty}
+        ${parsedRecipient ? Prisma.sql`AND d.recipient_code = ${parsedRecipient}` : Prisma.empty}
+        ${parsedDateFrom ? Prisma.sql`AND d.declaration_date >= ${parsedDateFrom}` : Prisma.empty}
+        ${parsedDateTo ? Prisma.sql`AND d.declaration_date <= ${parsedDateTo}` : Prisma.empty}
         AND d.product_name IS NOT NULL
       GROUP BY ac.brand, ac.model
       ORDER BY total_value_usd DESC NULLS LAST
@@ -192,7 +205,7 @@ aiRouter.post('/analyze-uktved', async (req: Request, res: Response) => {
       new: toProcess.length,
     })
   } catch (err) {
-    console.error(err)
+    console.error('Error analyzing UKTVED:', err)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
@@ -203,5 +216,5 @@ function parseExcelDate(val: string): number {
     const excelEpoch = new Date(1899, 11, 30)
     return Math.floor((d.getTime() - excelEpoch.getTime()) / 86400000)
   }
-  return parseFloat(val)
+  return parseFloat(val) || 0
 }

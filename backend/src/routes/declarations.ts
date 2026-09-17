@@ -3,30 +3,47 @@ import prisma from '../lib/prisma'
 
 export const declarationsRouter = Router()
 
+// In-memory кэш для списков фильтрации (сохраняет CPU и подключения к БД)
+let filtersCache: any = null
+let lastFiltersFetch = 0
+
 const ALLOWED_SORT = new Set([
   'id', 'declaration_date', 'decl_num_prefix', 'customs_office',
   'trade_country', 'origin_country', 'product_code', 'recipient_name',
   'recipient_code', 'weight_net', 'invoice_value_usd', 'customs_value_usd', 'duty_uah', 'vat_uah',
-  'brand', 'model', 'qty_parsed' // Додано для сортування за бажанням
+  'brand', 'model', 'qty_parsed'
 ])
 
 declarationsRouter.get('/filters/options', async (_req: Request, res: Response) => {
-  const [customs_offices, trade_countries, origin_countries, currencies, conditions] =
-    await Promise.all([
-      prisma.declaration.findMany({ select: { customs_office: true }, distinct: ['customs_office'], where: { customs_office: { not: null } }, take: 500 }),
-      prisma.declaration.findMany({ select: { trade_country: true }, distinct: ['trade_country'], where: { trade_country: { not: null } }, take: 500 }),
-      prisma.declaration.findMany({ select: { origin_country: true }, distinct: ['origin_country'], where: { origin_country: { not: null } }, take: 500 }),
-      prisma.declaration.findMany({ select: { currency_name: true }, distinct: ['currency_name'], where: { currency_name: { not: null } }, take: 100 }),
-      prisma.declaration.findMany({ select: { delivery_condition: true }, distinct: ['delivery_condition'], where: { delivery_condition: { not: null } }, take: 100 }),
-    ])
+  try {
+    // Если есть свежий кэш (меньше 10 минут) — отдаем его без обращения к БД
+    if (filtersCache && Date.now() - lastFiltersFetch < 10 * 60 * 1000) {
+      return res.json(filtersCache)
+    }
 
-  res.json({
-    customs_offices: customs_offices.map(r => r.customs_office).filter(Boolean).sort(),
-    trade_countries: trade_countries.map(r => r.trade_country).filter(Boolean).sort(),
-    origin_countries: origin_countries.map(r => r.origin_country).filter(Boolean).sort(),
-    currencies: currencies.map(r => r.currency_name).filter(Boolean).sort(),
-    delivery_conditions: conditions.map(r => r.delivery_condition).filter(Boolean).sort(),
-  })
+    const [customs_offices, trade_countries, origin_countries, currencies, conditions] =
+      await Promise.all([
+        prisma.declaration.findMany({ select: { customs_office: true }, distinct: ['customs_office'], where: { customs_office: { not: null } }, take: 500 }),
+        prisma.declaration.findMany({ select: { trade_country: true }, distinct: ['trade_country'], where: { trade_country: { not: null } }, take: 500 }),
+        prisma.declaration.findMany({ select: { origin_country: true }, distinct: ['origin_country'], where: { origin_country: { not: null } }, take: 500 }),
+        prisma.declaration.findMany({ select: { currency_name: true }, distinct: ['currency_name'], where: { currency_name: { not: null } }, take: 100 }),
+        prisma.declaration.findMany({ select: { delivery_condition: true }, distinct: ['delivery_condition'], where: { delivery_condition: { not: null } }, take: 100 }),
+      ])
+
+    filtersCache = {
+      customs_offices: customs_offices.map(r => r.customs_office).filter(Boolean).sort(),
+      trade_countries: trade_countries.map(r => r.trade_country).filter(Boolean).sort(),
+      origin_countries: origin_countries.map(r => r.origin_country).filter(Boolean).sort(),
+      currencies: currencies.map(r => r.currency_name).filter(Boolean).sort(),
+      delivery_conditions: conditions.map(r => r.delivery_condition).filter(Boolean).sort(),
+    }
+    lastFiltersFetch = Date.now()
+
+    res.json(filtersCache)
+  } catch (err) {
+    console.error('Error fetching filter options:', err)
+    res.status(500).json({ error: 'Failed to fetch filters' })
+  }
 })
 
 declarationsRouter.get('/', async (req: Request, res: Response) => {
@@ -64,8 +81,8 @@ declarationsRouter.get('/', async (req: Request, res: Response) => {
       importId = latestJob ? latestJob.id : ''
     }
 
-    const take = Math.min(parseInt(limit), 200)
-    const skip = (parseInt(page) - 1) * take
+    const take = Math.min(parseInt(limit) || 50, 200)
+    const skip = (Math.max(parseInt(page) || 1, 1) - 1) * take
     const orderField = ALLOWED_SORT.has(sortBy) ? sortBy : 'id'
     const orderDir = sortDir === 'desc' ? 'desc' : 'asc'
 
@@ -81,7 +98,9 @@ declarationsRouter.get('/', async (req: Request, res: Response) => {
     if (product_code) where.product_code = { startsWith: product_code }
     if (decl_num_prefix) where.decl_num_prefix = { contains: decl_num_prefix, mode: 'insensitive' }
     if (recipient_name) where.recipient_name = { contains: recipient_name, mode: 'insensitive' }
-    if (recipient_code) where.recipient_code = { equals: parseFloat(recipient_code) }
+    if (recipient_code && !isNaN(parseFloat(recipient_code))) {
+      where.recipient_code = { equals: parseFloat(recipient_code) }
+    }
     if (sender_name) where.sender_name = { contains: sender_name, mode: 'insensitive' }
     if (delivery_condition) where.delivery_condition = { in: delivery_condition.split(',') }
     if (currency_name) where.currency_name = { in: currency_name.split(',') }
@@ -113,7 +132,7 @@ declarationsRouter.get('/', async (req: Request, res: Response) => {
       ]
     }
 
-  const [data, total, sums] = await Promise.all([
+    const [data, total, sums] = await Promise.all([
       prisma.declaration.findMany({
         where,
         orderBy: { [orderField]: orderDir },
@@ -147,7 +166,6 @@ declarationsRouter.get('/', async (req: Request, res: Response) => {
           vat_uah: true,
           exchange_rate: true,
           import_id: true,
-          // Додаємо нові поля, щоб вони приходили в API:
           brand: true,
           model: true,
           qty_parsed: true,
@@ -171,10 +189,10 @@ declarationsRouter.get('/', async (req: Request, res: Response) => {
     res.json({
       data,
       pagination: {
-        page: parseInt(page),
+        page: parseInt(page) || 1,
         limit: take,
         total,
-        pages: Math.ceil(total / take),
+        pages: Math.ceil(total / take) || 1,
       },
       sums: {
         invoice_usd: Number(sums._sum.invoice_value_usd || 0),
@@ -185,16 +203,22 @@ declarationsRouter.get('/', async (req: Request, res: Response) => {
       },
     })
   } catch (err) {
-    console.error(err)
+    console.error('Error fetching declarations:', err)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
 
 declarationsRouter.get('/:id', async (req: Request, res: Response) => {
-  const id = parseInt(req.params.id)
-  const row = await prisma.declaration.findUnique({ where: { id } })
-  if (!row) return res.status(404).json({ error: 'Not found' })
-  res.json(row)
+  try {
+    const id = parseInt(req.params.id)
+    if (isNaN(id)) return res.status(400).json({ error: 'Invalid ID' })
+    const row = await prisma.declaration.findUnique({ where: { id } })
+    if (!row) return res.status(404).json({ error: 'Not found' })
+    res.json(row)
+  } catch (err) {
+    console.error('Error fetching declaration item:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
 })
 
 function parseExcelDate(val: string): number {
@@ -203,5 +227,5 @@ function parseExcelDate(val: string): number {
     const excelEpoch = new Date(1899, 11, 30)
     return Math.floor((d.getTime() - excelEpoch.getTime()) / 86400000)
   }
-  return parseFloat(val)
+  return parseFloat(val) || 0
 }

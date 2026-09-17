@@ -29,10 +29,13 @@ export default function ImportPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
 
-  const { data: jobs, refetch } = useQuery({
+ const { data: jobs, refetch } = useQuery({
     queryKey: ['import-jobs'],
     queryFn: () => api.get<ImportJob[]>('/import').then(r => r.data),
     refetchInterval: activeJobId ? 3000 : false,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    staleTime: Infinity,
   })
 
   useEffect(() => {
