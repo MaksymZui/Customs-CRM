@@ -2,6 +2,7 @@ import api from './client'
 
 export interface Declaration {
   id: number
+  item_number?: number | string | null
   decl_num_prefix: string | null
   decl_num_year: number | null
   decl_num_number: number | null

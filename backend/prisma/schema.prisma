@@ -10,8 +10,8 @@ datasource db {
 model Declaration {
   id Int @id @default(autoincrement())
 
-  decl_type_1 Float?
-  decl_type_2 Float?
+  decl_type_1 String?
+  decl_type_2 String?
   decl_type_3 String?
   decl_type_4 String?
 

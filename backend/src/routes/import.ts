@@ -42,20 +42,21 @@ importRouter.post('/', upload.single('file'), async (req: Request, res: Response
     },
   })
 
-  const scriptPath = path.resolve(process.cwd(), '..', 'scripts', 'import_xlsb.py')
   const isWindows = process.platform === 'win32'
-  const pythonCmd = isWindows ? 'python' : 'python3'
-  const dbUrl = process.env.DATABASE_URL || ''
   const filePath = req.file.path
   const jobId = job.id
 
-  const cmd = `${pythonCmd} "${scriptPath}" "${filePath}" "${jobId}"`
-
-  const child = exec(cmd, {
-    env: { ...process.env, DATABASE_URL: dbUrl },
-  })
-
-  child.unref()
+  let cmd: string
+  if (isWindows) {
+    const scriptPath = path.resolve(process.cwd(), '..', 'scripts', 'import_xlsb.py')
+    const dbUrl = process.env.DATABASE_URL || ''
+    cmd = `python "${scriptPath}" "${filePath}" "${jobId}"`
+    exec(cmd, { env: { ...process.env, DATABASE_URL: dbUrl } }).unref()
+  } else {
+    const wrapperPath = path.resolve(process.cwd(), '..', 'scripts', 'run_import.sh')
+    cmd = `bash "${wrapperPath}" "${filePath}" "${jobId}"`
+    exec(cmd).unref()
+  }
 
   res.json({ job_id: job.id })
 })

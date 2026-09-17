@@ -48,7 +48,7 @@ ${productNames.map((name, i) => `${i}. ${name.substring(0, 800)}`).join('\n')}
 
 aiRouter.post('/analyze-uktved', async (req: Request, res: Response) => {
   try {
-    let { code, importId = 'latest', date_from, date_to } = req.body as Record<string, string>
+    let { code, importId = 'latest', date_from, date_to, recipient_code } = req.body as Record<string, string>
 
     if (!code) return res.status(400).json({ error: 'code is required' })
 
@@ -65,6 +65,7 @@ aiRouter.post('/analyze-uktved', async (req: Request, res: Response) => {
       product_name: { not: null },
     }
     if (importId && importId !== 'all') where.import_id = importId
+    if (recipient_code) where.recipient_code = parseFloat(recipient_code)
     if (date_from || date_to) {
       where.declaration_date = {
         ...(date_from ? { gte: parseExcelDate(date_from) } : {}),
@@ -143,6 +144,7 @@ aiRouter.post('/analyze-uktved', async (req: Request, res: Response) => {
 
     // Агрегуємо результати через JOIN
     const importFilter = importId && importId !== 'all' ? `AND d.import_id = '${importId}'` : ''
+    const recipientFilter = recipient_code ? `AND d.recipient_code = ${parseFloat(recipient_code)}` : ''
     const dateFromFilter = date_from ? `AND d.declaration_date >= ${parseExcelDate(date_from)}` : ''
     const dateToFilter = date_to ? `AND d.declaration_date <= ${parseExcelDate(date_to)}` : ''
 
@@ -168,6 +170,7 @@ aiRouter.post('/analyze-uktved', async (req: Request, res: Response) => {
       JOIN ai_cache ac ON md5(d.product_name) = ac.product_hash
       WHERE d.product_code LIKE '${code}%'
         ${importFilter}
+        ${recipientFilter}
         ${dateFromFilter}
         ${dateToFilter}
         AND d.product_name IS NOT NULL

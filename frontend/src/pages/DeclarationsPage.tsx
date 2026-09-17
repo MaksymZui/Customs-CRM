@@ -303,12 +303,14 @@ export default function DeclarationsPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-800 text-gray-400 text-xs uppercase">
                 <tr>
+                  <th className="text-center px-2 py-3 w-10">№</th>
                   <th className="text-left px-4 py-3 cursor-pointer" onClick={() => toggleSort('declaration_date')}>
                     Дата {sortIcon('declaration_date')}
                   </th>
                   <th className="text-left px-4 py-3">Митниця</th>
                   <th className="text-left px-4 py-3">Країна</th>
                   <th className="text-left px-4 py-3">Код УКТ ЗЕД</th>
+                  <th className="text-left px-4 py-3">Модель</th>
                   <th className="text-left px-4 py-3 cursor-pointer" onClick={() => toggleSort('recipient_code')}>
                     Код фірми {sortIcon('recipient_code')}
                   </th>
@@ -333,6 +335,9 @@ export default function DeclarationsPage() {
                       className="border-t border-gray-800 hover:bg-gray-800/50 cursor-pointer"
                       onClick={() => setExpanded(expanded === row.id ? null : row.id)}
                     >
+                    <td className="px-2 py-2 text-center text-gray-400 font-mono text-xs">
+                      {(row as any).item_number ?? '—'}
+                    </td>
                       <td className="px-4 py-2 text-gray-300 whitespace-nowrap">
                         {excelDateToString(row.declaration_date)}
                       </td>
@@ -344,6 +349,9 @@ export default function DeclarationsPage() {
                       </td>
                       <td className="px-4 py-2 text-gray-300 font-mono">
                         {row.product_code?.substring(0, 10)}
+                      </td>
+                     <td className="px-4 py-2 text-emerald-400 max-w-[150px] truncate text-xs font-medium" title={row.model ?? undefined}>
+                        {row.model || '—'}
                       </td>
                       <td className="px-4 py-2 text-gray-400 font-mono text-xs">
                         {row.recipient_code?.toFixed(0) ?? '—'}
@@ -369,7 +377,7 @@ export default function DeclarationsPage() {
                     </tr>
                     {expanded === row.id && (
                       <tr key={`${row.id}-exp`} className="border-t border-gray-700 bg-gray-800/30">
-                        <td colSpan={11} className="px-6 py-4">
+                        <td colSpan={13} className="px-6 py-4">
                           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
                             <div><span className="text-gray-500">Номер декларації:</span> <span className="text-blue-400 font-mono">{row.decl_num_prefix}/{row.decl_num_year?.toFixed(0)}/{row.decl_num_number?.toFixed(0)}</span></div>
                             <div><span className="text-gray-500">Контейнер:</span> <span className="text-gray-200">{row.container_number || '—'}</span></div>

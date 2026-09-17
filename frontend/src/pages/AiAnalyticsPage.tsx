@@ -20,6 +20,7 @@ interface AiResponse {
 
 export default function AiAnalyticsPage() {
   const [code, setCode] = useState('')
+  const [recipientCode, setRecipientCode] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [search, setSearch] = useState('')
@@ -38,6 +39,7 @@ export default function AiAnalyticsPage() {
       api.post<AiResponse>('/ai/analyze-uktved', {
         code,
         importId,
+        recipient_code: recipientCode || undefined,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
       }).then(r => r.data),
@@ -65,7 +67,7 @@ export default function AiAnalyticsPage() {
 
       {/* Filters */}
       <div className="bg-gray-900 rounded-xl p-5 grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="md:col-span-2">
+        <div>
           <label className="text-gray-400 text-xs mb-1 block">Код УКТ ЗЕД</label>
           <input
             type="text"
@@ -73,6 +75,16 @@ export default function AiAnalyticsPage() {
             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-200 text-sm focus:outline-none focus:border-blue-500"
             value={code}
             onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
+          />
+        </div>
+        <div>
+          <label className="text-gray-400 text-xs mb-1 block">Код фірми отримувача</label>
+          <input
+            type="text"
+            placeholder="44287456"
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-200 text-sm focus:outline-none focus:border-blue-500"
+            value={recipientCode}
+            onChange={e => setRecipientCode(e.target.value.replace(/\D/g, ''))}
           />
         </div>
         <div>
