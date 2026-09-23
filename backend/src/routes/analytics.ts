@@ -130,3 +130,105 @@ analyticsRouter.get('/uktved', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Internal server error' })
   }
 })
+
+// 1. Отримати список усіх доступних місяців у базі даних
+analyticsRouter.get('/available-months', async (req: Request, res: Response) => {
+  try {
+    const months = await prisma.$queryRawUnsafe<{ month: string }[]>(`
+      SELECT DISTINCT TO_CHAR(MAKE_DATE(1899, 12, 30) + (declaration_date * INTERVAL '1 day'), 'YYYY-MM') as month
+      FROM declarations
+      WHERE declaration_date IS NOT NULL
+      ORDER BY month DESC
+    `)
+    res.json(months.map(r => r.month).filter(Boolean))
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// 2. Звіт по росту імпорту з довільним вибором місяців
+analyticsRouter.get('/growth-report', async (req: Request, res: Response) => {
+  try {
+    let { baseMonths, compareMonths, importId = 'latest' } = req.query as {
+      baseMonths?: string     // наприклад: "2025-01,2025-02,2025-03"
+      compareMonths?: string  // наприклад: "2025-10,2025-11,2025-12"
+      importId?: string
+    }
+
+    if (!importId || importId === 'latest') {
+      const latestJob = await prisma.importJob.findFirst({
+        where: { status: 'done' },
+        orderBy: { created_at: 'desc' },
+      })
+      importId = latestJob ? latestJob.id : ''
+    }
+
+    const importFilter = importId && importId !== 'all'
+      ? `AND import_id = '${importId}'`
+      : ''
+
+    const baseList = baseMonths ? baseMonths.split(',').map(s => s.trim()).filter(Boolean) : []
+    const compareList = compareMonths ? compareMonths.split(',').map(s => s.trim()).filter(Boolean) : []
+
+    const baseCondition = baseList.length > 0
+      ? `TO_CHAR(MAKE_DATE(1899, 12, 30) + (declaration_date * INTERVAL '1 day'), 'YYYY-MM') IN (${baseList.map(m => `'${m}'`).join(',')})`
+      : '1=0'
+
+    const compareCondition = compareList.length > 0
+      ? `TO_CHAR(MAKE_DATE(1899, 12, 30) + (declaration_date * INTERVAL '1 day'), 'YYYY-MM') IN (${compareList.map(m => `'${m}'`).join(',')})`
+      : '1=0'
+
+    const reportData = await prisma.$queryRawUnsafe<{
+      ukt_zed_4: string
+      base_value_usd: number | null
+      compare_value_usd: number | null
+      base_decl_count: bigint
+      compare_decl_count: bigint
+    }[]>(`
+      SELECT 
+        LEFT(product_code, 4) AS ukt_zed_4,
+        SUM(CASE WHEN ${baseCondition} THEN invoice_value_usd ELSE 0 END) AS base_value_usd,
+        SUM(CASE WHEN ${compareCondition} THEN invoice_value_usd ELSE 0 END) AS compare_value_usd,
+        COUNT(DISTINCT CASE WHEN ${baseCondition} THEN decl_num_number END) AS base_decl_count,
+        COUNT(DISTINCT CASE WHEN ${compareCondition} THEN decl_num_number END) AS compare_decl_count
+      FROM declarations
+      WHERE product_code IS NOT NULL 
+        AND product_code != ''
+        ${importFilter}
+      GROUP BY LEFT(product_code, 4)
+      HAVING SUM(CASE WHEN ${compareCondition} THEN invoice_value_usd ELSE 0 END) > 0
+         OR SUM(CASE WHEN ${baseCondition} THEN invoice_value_usd ELSE 0 END) > 0
+      ORDER BY compare_value_usd DESC
+      LIMIT 100
+    `)
+
+    const result = reportData.map(row => {
+      const baseVal = Number(row.base_value_usd || 0)
+      const compVal = Number(row.compare_value_usd || 0)
+      const growthUsd = compVal - baseVal
+      const growthValuePct = baseVal > 0 ? ((compVal / baseVal) - 1) * 100 : (compVal > 0 ? 100 : 0)
+
+      const baseDecl = Number(row.base_decl_count || 0)
+      const compDecl = Number(row.compare_decl_count || 0)
+      const growthDeclPct = baseDecl > 0 ? ((compDecl / baseDecl) - 1) * 100 : (compDecl > 0 ? 100 : 0)
+
+      return {
+        ukt_zed_4: row.ukt_zed_4,
+        base_value_usd: baseVal,
+        compare_value_usd: compVal,
+        growth_usd: growthUsd,
+        growth_value_pct: growthValuePct,
+        base_decl_count: baseDecl,
+        compare_decl_count: compDecl,
+        growth_decl_pct: growthDeclPct,
+      }
+    })
+
+    result.sort((a, b) => b.growth_usd - a.growth_usd)
+    res.json(result.slice(0, 50)) // ТОП-50
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
