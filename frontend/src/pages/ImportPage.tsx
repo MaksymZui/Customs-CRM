@@ -29,10 +29,11 @@ export default function ImportPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
 
- const { data: jobs, refetch } = useQuery({
+  // Вимкнули refetchInterval, оскільки для відстеження прогресу використовується SSE
+  const { data: jobs, refetch } = useQuery({
     queryKey: ['import-jobs'],
     queryFn: () => api.get<ImportJob[]>('/import').then(r => r.data),
-    refetchInterval: activeJobId ? 3000 : false,
+    refetchInterval: false,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
     staleTime: Infinity,
@@ -47,6 +48,7 @@ export default function ImportPage() {
     es.onmessage = (e) => {
       const data: ProgressEvent = JSON.parse(e.data)
       setProgress(data)
+      
       if (data.status === 'done' || data.status === 'error') {
         es.close()
         setActiveJobId(null)
@@ -61,7 +63,9 @@ export default function ImportPage() {
       }
     }
 
-    es.onerror = () => es.close()
+    es.onerror = () => {
+      es.close()
+    }
 
     return () => es.close()
   }, [activeJobId, refetch])

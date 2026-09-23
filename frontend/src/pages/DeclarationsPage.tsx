@@ -5,6 +5,7 @@ import { declarationsApi, excelDateToString, formatUSD, formatUAH, formatKg, typ
 const SORT_FIELDS = [
   { value: 'id', label: 'ID' },
   { value: 'declaration_date', label: 'Дата' },
+  { value: 'product_code', label: 'УКТ ЗЕД' },
   { value: 'customs_value_usd', label: 'Митна вартість' },
   { value: 'invoice_value_usd', label: 'Фактурна вартість' },
   { value: 'weight_net', label: 'Вага нетто' },
@@ -309,7 +310,9 @@ export default function DeclarationsPage() {
                   </th>
                   <th className="text-left px-4 py-3">Митниця</th>
                   <th className="text-left px-4 py-3">Країна</th>
-                  <th className="text-left px-4 py-3">Код УКТ ЗЕД</th>
+                  <th className="text-left px-4 py-3 cursor-pointer" onClick={() => toggleSort('product_code')}>
+                    Код УКТ ЗЕД {sortIcon('product_code')}
+                  </th>
                   <th className="text-left px-4 py-3">Модель</th>
                   <th className="text-left px-4 py-3 cursor-pointer" onClick={() => toggleSort('recipient_code')}>
                     Код фірми {sortIcon('recipient_code')}
