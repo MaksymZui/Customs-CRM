@@ -3,7 +3,6 @@ import prisma from '../lib/prisma'
 
 export const declarationsRouter = Router()
 
-// In-memory кэш для списков фильтрации (сохраняет CPU и подключения к БД)
 let filtersCache: any = null
 let lastFiltersFetch = 0
 
@@ -16,26 +15,25 @@ const ALLOWED_SORT = new Set([
 
 declarationsRouter.get('/filters/options', async (_req: Request, res: Response) => {
   try {
-    // Если есть свежий кэш (меньше 10 минут) — отдаем его без обращения к БД
     if (filtersCache && Date.now() - lastFiltersFetch < 10 * 60 * 1000) {
       return res.json(filtersCache)
     }
 
     const [customs_offices, trade_countries, origin_countries, currencies, conditions] =
       await Promise.all([
-        prisma.declaration.findMany({ select: { customs_office: true }, distinct: ['customs_office'], where: { customs_office: { not: null } }, take: 500 }),
-        prisma.declaration.findMany({ select: { trade_country: true }, distinct: ['trade_country'], where: { trade_country: { not: null } }, take: 500 }),
-        prisma.declaration.findMany({ select: { origin_country: true }, distinct: ['origin_country'], where: { origin_country: { not: null } }, take: 500 }),
-        prisma.declaration.findMany({ select: { currency_name: true }, distinct: ['currency_name'], where: { currency_name: { not: null } }, take: 100 }),
-        prisma.declaration.findMany({ select: { delivery_condition: true }, distinct: ['delivery_condition'], where: { delivery_condition: { not: null } }, take: 100 }),
+        prisma.$queryRaw<{ customs_office: string }[]>`SELECT DISTINCT customs_office FROM declarations WHERE customs_office IS NOT NULL ORDER BY customs_office LIMIT 500`,
+        prisma.$queryRaw<{ trade_country: string }[]>`SELECT DISTINCT trade_country FROM declarations WHERE trade_country IS NOT NULL ORDER BY trade_country LIMIT 500`,
+        prisma.$queryRaw<{ origin_country: string }[]>`SELECT DISTINCT origin_country FROM declarations WHERE origin_country IS NOT NULL ORDER BY origin_country LIMIT 500`,
+        prisma.$queryRaw<{ currency_name: string }[]>`SELECT DISTINCT currency_name FROM declarations WHERE currency_name IS NOT NULL ORDER BY currency_name LIMIT 100`,
+        prisma.$queryRaw<{ delivery_condition: string }[]>`SELECT DISTINCT delivery_condition FROM declarations WHERE delivery_condition IS NOT NULL ORDER BY delivery_condition LIMIT 100`,
       ])
 
     filtersCache = {
-      customs_offices: customs_offices.map(r => r.customs_office).filter(Boolean).sort(),
-      trade_countries: trade_countries.map(r => r.trade_country).filter(Boolean).sort(),
-      origin_countries: origin_countries.map(r => r.origin_country).filter(Boolean).sort(),
-      currencies: currencies.map(r => r.currency_name).filter(Boolean).sort(),
-      delivery_conditions: conditions.map(r => r.delivery_condition).filter(Boolean).sort(),
+      customs_offices: customs_offices.map(r => r.customs_office),
+      trade_countries: trade_countries.map(r => r.trade_country),
+      origin_countries: origin_countries.map(r => r.origin_country),
+      currencies: currencies.map(r => r.currency_name),
+      delivery_conditions: conditions.map(r => r.delivery_condition),
     }
     lastFiltersFetch = Date.now()
 

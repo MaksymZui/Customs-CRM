@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../api/client'
 import { formatUSD, formatKg } from '../api/declarations'
-import MonthSelect from '../components/MonthSelect' // Использование готового компонента из вашей структуры
+import MonthSelect from '../components/MonthSelect'
 
 interface BrandModelRow {
   brand: string
@@ -46,21 +46,44 @@ interface GrowthReportRow {
   growth_decl_pct: number
 }
 
+interface DetailResponse {
+  code: string
+  total_usd: number
+  recipients: {
+    recipient_code: number
+    recipient_name: string
+    total_usd: number
+    share_pct: number
+    decl_count: number
+  }[]
+  senders: {
+    sender_name: string
+    origin_country: string
+    total_usd: number
+    share_pct: number
+    decl_count: number
+  }[]
+}
+
 type Tab = 'brand' | 'product'
-type MainTab = 'search' | 'growth-report'
+type MainTab = 'search' | 'growth-report' | 'detail'
 
 export default function AnalyticsPage() {
   const [mainTab, setMainTab] = useState<MainTab>('search')
 
-  // Состояние для поиска по коду
   const [code, setCode] = useState('')
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<Tab>('brand')
 
-  // Состояние для выбора месяцев в отчете роста
   const [availableMonths, setAvailableMonths] = useState<string[]>([])
   const [baseMonths, setBaseMonths] = useState<string[]>([])
   const [compareMonths, setCompareMonths] = useState<string[]>([])
+
+  // Для деталізації
+  const [detailCode, setDetailCode] = useState('')
+  const [detailCodeInput, setDetailCodeInput] = useState('')
+  const [detailMonths, setDetailMonths] = useState<string[]>([])
+  const [detailMonthsAvailable, setDetailMonthsAvailable] = useState<string[]>([])
 
   const [importId, setImportId] = useState(
     localStorage.getItem('selectedImportId') || 'latest'
@@ -74,20 +97,19 @@ export default function AnalyticsPage() {
     return () => window.removeEventListener('importFilterChanged', handler)
   }, [])
 
-  // Загрузка доступных месяцев при открытии вкладки отчета роста
   useEffect(() => {
-    if (mainTab === 'growth-report') {
+    if (mainTab === 'growth-report' || mainTab === 'detail') {
       api.get<string[]>('/analytics/available-months').then(res => {
         setAvailableMonths(res.data)
+        setDetailMonthsAvailable(res.data)
         if (res.data.length >= 6 && baseMonths.length === 0) {
-          setCompareMonths(res.data.slice(0, 3)) // последние 3 месяца
-          setBaseMonths(res.data.slice(3, 6))   // предыдущие 3 месяца
+          setCompareMonths(res.data.slice(0, 3))
+          setBaseMonths(res.data.slice(3, 6))
         }
       })
     }
   }, [mainTab])
 
-  // Запрос данных отчета роста с бэкенда
   const { data: growthData, isLoading: growthLoading } = useQuery({
     queryKey: ['growth-report', baseMonths, compareMonths, importId],
     queryFn: () =>
@@ -101,7 +123,6 @@ export default function AnalyticsPage() {
     enabled: mainTab === 'growth-report' && baseMonths.length > 0 && compareMonths.length > 0,
   })
 
-  // Запрос поиска по УКТ ЗЕД
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['analytics-uktved', code, importId],
     queryFn: () =>
@@ -109,6 +130,20 @@ export default function AnalyticsPage() {
         params: { code, importId },
       }).then(r => r.data),
     enabled: mainTab === 'search' && code.length >= 4,
+    placeholderData: prev => prev,
+  })
+
+  const { data: detailData, isLoading: detailLoading } = useQuery({
+    queryKey: ['analytics-detail', detailCode, detailMonths, importId],
+    queryFn: () =>
+      api.get<DetailResponse>('/analytics/uktved-detail', {
+        params: {
+          code: detailCode,
+          importId,
+          months: detailMonths.join(','),
+        },
+      }).then(r => r.data),
+    enabled: mainTab === 'detail' && detailCode.length >= 4,
     placeholderData: prev => prev,
   })
 
@@ -124,9 +159,8 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-100">Анализ по УКТ ВЭД</h1>
+      <h1 className="text-2xl font-bold text-gray-100">Аналіз по УКТ ЗЕД</h1>
 
-      {/* Главный переключатель режимов страницы */}
       <div className="flex border-b border-gray-800 gap-4">
         <button
           onClick={() => setMainTab('search')}
@@ -136,7 +170,7 @@ export default function AnalyticsPage() {
               : 'text-gray-400 hover:text-gray-200'
           }`}
         >
-          🔍 Поиск по коду
+          🔍 Пошук за кодом
         </button>
         <button
           onClick={() => setMainTab('growth-report')}
@@ -146,67 +180,67 @@ export default function AnalyticsPage() {
               : 'text-gray-400 hover:text-gray-200'
           }`}
         >
-          📈 Отчет роста импорта (ТОП-50)
+          📈 Звіт росту імпорту (ТОП-50)
+        </button>
+        <button
+          onClick={() => setMainTab('detail')}
+          className={`pb-2 text-sm font-medium transition-colors ${
+            mainTab === 'detail'
+              ? 'text-blue-400 border-b-2 border-blue-400'
+              : 'text-gray-400 hover:text-gray-200'
+          }`}
+        >
+          🏢 Деталізація по УКТ ЗЕД
         </button>
       </div>
 
-      {/* Условие: Режим отчета роста */}
-      {mainTab === 'growth-report' ? (
+      {/* Звіт росту */}
+      {mainTab === 'growth-report' && (
         <div className="space-y-6">
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 space-y-4">
-            <h2 className="text-md font-semibold text-gray-200">Выберите месяцы для сравнения</h2>
-
+            <h2 className="text-md font-semibold text-gray-200">Виберіть місяці для порівняння</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="text-xs text-gray-400 block mb-2 font-medium">
-                  Базовый период: {baseMonths.join(', ') || 'не выбрано'}
+                  Базовий період: {baseMonths.join(', ') || 'не вибрано'}
                 </label>
-                <MonthSelect
-                  months={availableMonths}
-                  selected={baseMonths}
-                  onChange={setBaseMonths}
-                />
+                <MonthSelect months={availableMonths} selected={baseMonths} onChange={setBaseMonths} />
               </div>
-
               <div>
                 <label className="text-xs text-gray-400 block mb-2 font-medium">
-                  Сравниваемый период: {compareMonths.join(', ') || 'не выбрано'}
+                  Порівнюваний період: {compareMonths.join(', ') || 'не вибрано'}
                 </label>
-                <MonthSelect
-                  months={availableMonths}
-                  selected={compareMonths}
-                  onChange={setCompareMonths}
-                />
+                <MonthSelect months={availableMonths} selected={compareMonths} onChange={setCompareMonths} />
               </div>
             </div>
           </div>
 
-          {growthLoading && <p className="text-gray-400 text-center py-8">Формирование отчета...</p>}
+          {growthLoading && <p className="text-gray-400 text-center py-8">Формування звіту...</p>}
 
           {growthData && (
             <div className="bg-gray-900 rounded-xl overflow-x-auto border border-gray-800">
               <table className="w-full text-xs text-left text-gray-300">
                 <thead className="bg-gray-800 text-gray-200 uppercase">
                   <tr>
-                    <th className="px-4 py-3">УКТ ВЭД (4 знака)</th>
-                    <th className="px-4 py-3 text-right">Баз. период $</th>
-                    <th className="px-4 py-3 text-right">Сравн. период $</th>
-                    <th className="px-4 py-3 text-right">Рост $</th>
-                    <th className="px-4 py-3 text-right">Рост %</th>
+                    <th className="px-4 py-3">УКТ ЗЕД (4 знаки)</th>
+                    <th className="px-4 py-3 text-right">Баз. період $</th>
+                    <th className="px-4 py-3 text-right">Пор. період $</th>
+                    <th className="px-4 py-3 text-right">Ріст $</th>
+                    <th className="px-4 py-3 text-right">Ріст %</th>
                     <th className="px-4 py-3 text-right">Декл. баз.</th>
-                    <th className="px-4 py-3 text-right">Декл. сравн.</th>
-                    <th className="px-4 py-3 text-right">Рост декл. %</th>
+                    <th className="px-4 py-3 text-right">Декл. пор.</th>
+                    <th className="px-4 py-3 text-right">Ріст декл. %</th>
                   </tr>
                 </thead>
                 <tbody>
                   {growthData.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="text-center text-gray-500 py-8">
-                        Нет данных для выбранных периодов
+                        Немає даних для вибраних періодів
                       </td>
                     </tr>
                   ) : (
-                    growthData.map((row) => (
+                    growthData.map(row => (
                       <tr key={row.ukt_zed_4} className="border-t border-gray-800 hover:bg-gray-800/50">
                         <td className="px-4 py-3 font-semibold text-white">{row.ukt_zed_4}</td>
                         <td className="px-4 py-3 text-right">{formatUSD(row.base_value_usd)}</td>
@@ -230,25 +264,188 @@ export default function AnalyticsPage() {
             </div>
           )}
         </div>
-      ) : (
-        /* Режим поиска по УКТ ВЭД */
+      )}
+
+      {/* Деталізація */}
+      {mainTab === 'detail' && (
+        <div className="space-y-6">
+          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 space-y-4">
+            <h2 className="text-md font-semibold text-gray-200">Деталізація по УКТ ЗЕД</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Код УКТ ЗЕД (мінімум 4 цифри)</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="наприклад: 8525"
+                    className="flex-1 bg-gray-950 border border-gray-700 rounded-lg px-4 py-2 text-gray-200 placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm"
+                    value={detailCodeInput}
+                    onChange={e => setDetailCodeInput(e.target.value.replace(/\D/g, ''))}
+                    onKeyDown={e => e.key === 'Enter' && detailCodeInput.length >= 4 && setDetailCode(detailCodeInput)}
+                  />
+                  <button
+                    onClick={() => detailCodeInput.length >= 4 && setDetailCode(detailCodeInput)}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Знайти
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">
+                  Фільтр за місяцями: {detailMonths.length > 0 ? detailMonths.join(', ') : 'всі місяці'}
+                </label>
+                <MonthSelect
+                  months={detailMonthsAvailable}
+                  selected={detailMonths}
+                  onChange={setDetailMonths}
+                />
+              </div>
+            </div>
+          </div>
+
+          {detailLoading && <p className="text-gray-400 text-center py-8">Завантаження...</p>}
+
+          {detailData && (
+            <div className="space-y-4">
+              {/* Загальний обсяг */}
+              <div className="bg-blue-950/40 border border-blue-800/50 rounded-xl px-5 py-3 flex items-center gap-4">
+                <span className="text-gray-400 text-sm">Загальний обсяг імпорту по коду</span>
+                <span className="text-white font-bold text-lg">{detailData.code}</span>
+                <span className="ml-auto text-blue-300 font-bold text-xl">{formatUSD(detailData.total_usd)}</span>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                {/* Отримувачі */}
+                <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+                  <div className="px-4 py-3 bg-gray-800/60 border-b border-gray-700">
+                    <h3 className="text-sm font-semibold text-green-400">🏭 Отримувачі (українські компанії)</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">Які компанії імпортували товар за цим кодом</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-gray-300">
+                      <thead className="bg-gray-800 text-gray-400 uppercase">
+                        <tr>
+                          <th className="px-3 py-2 text-left">ЄДРПОУ</th>
+                          <th className="px-3 py-2 text-left">Отримувач</th>
+                          <th className="px-3 py-2 text-right">Обсяг, $</th>
+                          <th className="px-3 py-2 text-right">Частка, %</th>
+                          <th className="px-3 py-2 text-right">Декларацій</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detailData.recipients.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="text-center text-gray-500 py-6">Немає даних</td>
+                          </tr>
+                        ) : (
+                          <>
+                            {detailData.recipients.map((r, i) => (
+                              <tr key={i} className="border-t border-gray-800 hover:bg-gray-800/50">
+                                <td className="px-3 py-2 text-gray-500 font-mono">{r.recipient_code || '—'}</td>
+                                <td className="px-3 py-2 text-gray-200 max-w-[200px]">
+                                  <p className="truncate" title={r.recipient_name}>{r.recipient_name}</p>
+                                </td>
+                                <td className="px-3 py-2 text-right text-blue-300 font-medium">{formatUSD(r.total_usd)}</td>
+                                <td className="px-3 py-2 text-right text-yellow-400">{r.share_pct.toFixed(1)}%</td>
+                                <td className="px-3 py-2 text-right">{r.decl_count}</td>
+                              </tr>
+                            ))}
+                            <tr className="border-t-2 border-gray-600 bg-gray-800/40 font-semibold">
+                              <td colSpan={2} className="px-3 py-2 text-gray-200">Разом</td>
+                              <td className="px-3 py-2 text-right text-blue-300">{formatUSD(detailData.total_usd)}</td>
+                              <td className="px-3 py-2 text-right text-yellow-400">100%</td>
+                              <td className="px-3 py-2 text-right text-gray-300">
+                                {detailData.recipients.reduce((s, r) => s + r.decl_count, 0)}
+                              </td>
+                            </tr>
+                          </>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Відправники */}
+                <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+                  <div className="px-4 py-3 bg-gray-800/60 border-b border-gray-700">
+                    <h3 className="text-sm font-semibold text-orange-400">✈️ Відправники (іноземні компанії)</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">Які іноземні компанії відправили товар в Україну</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-gray-300">
+                      <thead className="bg-gray-800 text-gray-400 uppercase">
+                        <tr>
+                          <th className="px-3 py-2 text-left">Відправник</th>
+                          <th className="px-3 py-2 text-left">Країна</th>
+                          <th className="px-3 py-2 text-right">Обсяг, $</th>
+                          <th className="px-3 py-2 text-right">Частка, %</th>
+                          <th className="px-3 py-2 text-right">Декларацій</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detailData.senders.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="text-center text-gray-500 py-6">Немає даних</td>
+                          </tr>
+                        ) : (
+                          <>
+                            {detailData.senders.map((r, i) => (
+                              <tr key={i} className="border-t border-gray-800 hover:bg-gray-800/50">
+                                <td className="px-3 py-2 text-gray-200 max-w-[200px]">
+                                  <p className="truncate" title={r.sender_name}>{r.sender_name}</p>
+                                </td>
+                                <td className="px-3 py-2 text-gray-400">{r.origin_country || '—'}</td>
+                                <td className="px-3 py-2 text-right text-blue-300 font-medium">{formatUSD(r.total_usd)}</td>
+                                <td className="px-3 py-2 text-right text-yellow-400">{r.share_pct.toFixed(1)}%</td>
+                                <td className="px-3 py-2 text-right">{r.decl_count}</td>
+                              </tr>
+                            ))}
+                            <tr className="border-t-2 border-gray-600 bg-gray-800/40 font-semibold">
+                              <td colSpan={2} className="px-3 py-2 text-gray-200">Разом</td>
+                              <td className="px-3 py-2 text-right text-blue-300">{formatUSD(detailData.total_usd)}</td>
+                              <td className="px-3 py-2 text-right text-yellow-400">100%</td>
+                              <td className="px-3 py-2 text-right text-gray-300">
+                                {detailData.senders.reduce((s, r) => s + r.decl_count, 0)}
+                              </td>
+                            </tr>
+                          </>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!detailData && !detailLoading && detailCode.length < 4 && (
+            <p className="text-gray-500 text-sm text-center py-8">
+              Введіть код УКТ ЗЕД (мінімум 4 цифри) та натисніть «Знайти»
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Пошук за кодом */}
+      {mainTab === 'search' && (
         <div className="space-y-4">
           <div className="flex gap-3">
             <div className="flex-1">
-              <label className="text-gray-400 text-xs mb-1 block">Код УКТ ВЭД (минимум 4 цифры)</label>
+              <label className="text-gray-400 text-xs mb-1 block">Код УКТ ЗЕД (мінімум 4 цифри)</label>
               <input
                 type="text"
-                placeholder="например: 8525890010"
+                placeholder="наприклад: 8525890010"
                 className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-gray-200 placeholder-gray-500 focus:outline-none focus:border-blue-500"
                 value={code}
                 onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
               />
             </div>
             <div className="flex-1">
-              <label className="text-gray-400 text-xs mb-1 block">Поиск</label>
+              <label className="text-gray-400 text-xs mb-1 block">Пошук</label>
               <input
                 type="text"
-                placeholder="бренд, модель, наименование товара..."
+                placeholder="бренд, модель, найменування товару..."
                 className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-gray-200 placeholder-gray-500 focus:outline-none focus:border-blue-500"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
@@ -259,10 +456,10 @@ export default function AnalyticsPage() {
           {data && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                { label: 'Деклараций', value: data.totals.declarations.toLocaleString('ru-RU') },
-                { label: 'Общее количество', value: data.totals.total_qty ? `${data.totals.total_qty.toLocaleString('ru-RU')} шт` : '—' },
-                { label: 'Общий вес', value: formatKg(data.totals.total_weight) },
-                { label: 'Общая стоимость', value: formatUSD(data.totals.total_value_usd) },
+                { label: 'Декларацій', value: data.totals.declarations.toLocaleString('uk-UA') },
+                { label: 'Загальна кількість', value: data.totals.total_qty ? `${data.totals.total_qty.toLocaleString('uk-UA')} шт` : '—' },
+                { label: 'Загальна вага', value: formatKg(data.totals.total_weight) },
+                { label: 'Загальна вартість', value: formatUSD(data.totals.total_value_usd) },
               ].map(s => (
                 <div key={s.label} className="bg-gray-900 rounded-lg px-4 py-3">
                   <p className="text-gray-500 text-xs mb-1">{s.label}</p>
@@ -274,11 +471,11 @@ export default function AnalyticsPage() {
 
           {code.length < 4 && (
             <p className="text-gray-500 text-sm text-center py-8">
-              Введите код УКТ ВЭД (минимум 4 цифры), чтобы увидеть анализ
+              Введіть код УКТ ЗЕД (мінімум 4 цифри), щоб побачити аналіз
             </p>
           )}
 
-          {isLoading && <p className="text-gray-400 text-center py-8">Загрузка...</p>}
+          {isLoading && <p className="text-gray-400 text-center py-8">Завантаження...</p>}
 
           {data && (
             <div className="bg-gray-900 rounded-xl overflow-hidden">
@@ -301,11 +498,11 @@ export default function AnalyticsPage() {
                       : 'text-gray-400 hover:text-gray-200'
                   }`}
                 >
-                  Наименование товара
+                  Найменування товару
                 </button>
                 {isFetching && (
                   <span className="ml-auto px-4 py-3 text-blue-400 text-xs self-center">
-                    Обновление...
+                    Оновлення...
                   </span>
                 )}
               </div>
@@ -317,10 +514,10 @@ export default function AnalyticsPage() {
                       <tr>
                         <th className="text-left px-4 py-3">Бренд</th>
                         <th className="text-left px-4 py-3">Модель</th>
-                        <th className="text-right px-4 py-3">Деклараций</th>
-                        <th className="text-right px-4 py-3">Количество</th>
-                        <th className="text-right px-4 py-3">Вес нетто</th>
-                        <th className="text-right px-4 py-3">Стоимость $</th>
+                        <th className="text-right px-4 py-3">Декларацій</th>
+                        <th className="text-right px-4 py-3">Кількість</th>
+                        <th className="text-right px-4 py-3">Вага нетто</th>
+                        <th className="text-right px-4 py-3">Вартість $</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -328,8 +525,8 @@ export default function AnalyticsPage() {
                         <tr>
                           <td colSpan={6} className="text-center text-gray-500 py-8">
                             {data.by_brand_model.length === 0
-                              ? 'Бренды не распознаны — данные появятся после следующего импорта'
-                              : 'Ничего не найдено'}
+                              ? 'Бренди не розпізнані — дані з\'являться після наступного імпорту'
+                              : 'Нічого не знайдено'}
                           </td>
                         </tr>
                       ) : (
@@ -337,9 +534,9 @@ export default function AnalyticsPage() {
                           <tr key={i} className="border-t border-gray-800 hover:bg-gray-800/50">
                             <td className="px-4 py-3 text-blue-300 font-medium">{row.brand}</td>
                             <td className="px-4 py-3 text-gray-300">{row.model}</td>
-                            <td className="px-4 py-3 text-right text-gray-300">{row.count.toLocaleString('ru-RU')}</td>
+                            <td className="px-4 py-3 text-right text-gray-300">{row.count.toLocaleString('uk-UA')}</td>
                             <td className="px-4 py-3 text-right text-gray-300">
-                              {row.total_qty ? `${row.total_qty.toLocaleString('ru-RU')} ${row.unit_name || 'шт'}` : '—'}
+                              {row.total_qty ? `${row.total_qty.toLocaleString('uk-UA')} ${row.unit_name || 'шт'}` : '—'}
                             </td>
                             <td className="px-4 py-3 text-right text-gray-300">{formatKg(row.total_weight)}</td>
                             <td className="px-4 py-3 text-right text-blue-400 font-medium">{formatUSD(row.total_value_usd)}</td>
@@ -356,17 +553,17 @@ export default function AnalyticsPage() {
                   <table className="w-full text-sm">
                     <thead className="bg-gray-800 text-gray-400 text-xs uppercase">
                       <tr>
-                        <th className="text-left px-4 py-3">Наименование товара</th>
-                        <th className="text-right px-4 py-3">Деклараций</th>
-                        <th className="text-right px-4 py-3">Количество</th>
-                        <th className="text-right px-4 py-3">Вес нетто</th>
-                        <th className="text-right px-4 py-3">Стоимость $</th>
+                        <th className="text-left px-4 py-3">Найменування товару</th>
+                        <th className="text-right px-4 py-3">Декларацій</th>
+                        <th className="text-right px-4 py-3">Кількість</th>
+                        <th className="text-right px-4 py-3">Вага нетто</th>
+                        <th className="text-right px-4 py-3">Вартість $</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredProduct.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="text-center text-gray-500 py-8">Ничего не найдено</td>
+                          <td colSpan={5} className="text-center text-gray-500 py-8">Нічого не знайдено</td>
                         </tr>
                       ) : (
                         filteredProduct.map((row, i) => (
@@ -374,9 +571,9 @@ export default function AnalyticsPage() {
                             <td className="px-4 py-3 text-gray-300 max-w-[600px]">
                               <p className="line-clamp-3 text-xs leading-relaxed">{row.product_name}</p>
                             </td>
-                            <td className="px-4 py-3 text-right text-gray-300">{row.count.toLocaleString('ru-RU')}</td>
+                            <td className="px-4 py-3 text-right text-gray-300">{row.count.toLocaleString('uk-UA')}</td>
                             <td className="px-4 py-3 text-right text-gray-300">
-                              {row.total_qty ? `${row.total_qty.toLocaleString('ru-RU')} ${row.unit_name || 'шт'}` : '—'}
+                              {row.total_qty ? `${row.total_qty.toLocaleString('uk-UA')} ${row.unit_name || 'шт'}` : '—'}
                             </td>
                             <td className="px-4 py-3 text-right text-gray-300">{formatKg(row.total_weight)}</td>
                             <td className="px-4 py-3 text-right text-blue-400 font-medium">{formatUSD(row.total_value_usd)}</td>

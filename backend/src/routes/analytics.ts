@@ -9,7 +9,6 @@ analyticsRouter.get('/uktved', async (req: Request, res: Response) => {
 
     if (!code) return res.status(400).json({ error: 'code is required' })
 
-    // Очищаємо код від усіх нецифрових символів
     const cleanCode = code.replace(/\D/g, '')
     if (!cleanCode) return res.status(400).json({ error: 'invalid code' })
 
@@ -131,7 +130,115 @@ analyticsRouter.get('/uktved', async (req: Request, res: Response) => {
   }
 })
 
-// 1. Отримати список усіх доступних місяців у базі даних
+// Деталізація по УКТ ЗЕД — отримувачі та відправники
+analyticsRouter.get('/uktved-detail', async (req: Request, res: Response) => {
+  try {
+    let { code, importId = 'latest', months } = req.query as Record<string, string>
+
+    if (!code) return res.status(400).json({ error: 'code is required' })
+    const cleanCode = code.replace(/\D/g, '')
+    if (!cleanCode) return res.status(400).json({ error: 'invalid code' })
+
+    if (!importId || importId === 'latest') {
+      const latestJob = await prisma.importJob.findFirst({
+        where: { status: 'done' },
+        orderBy: { created_at: 'desc' },
+      })
+      importId = latestJob ? latestJob.id : ''
+    }
+
+    const importFilter = importId && importId !== 'all'
+      ? `AND import_id = '${importId}'`
+      : ''
+
+    const monthList = months
+      ? months.split(',').map(s => s.trim()).filter(Boolean)
+      : []
+    const monthFilter = monthList.length > 0
+      ? `AND TO_CHAR(MAKE_DATE(1899, 12, 30) + (declaration_date * INTERVAL '1 day'), 'YYYY-MM') IN (${monthList.map(m => `'${m}'`).join(',')})`
+      : ''
+
+    const codeFilter = `product_code LIKE '${cleanCode}%'`
+
+    // Загальний обсяг
+    const totalResult = await prisma.$queryRawUnsafe<{ total_usd: number }[]>(`
+      SELECT SUM(invoice_value_usd) as total_usd
+      FROM declarations
+      WHERE ${codeFilter}
+        ${importFilter}
+        ${monthFilter}
+    `)
+    const totalUsd = Number(totalResult[0]?.total_usd || 0)
+
+    // Отримувачі
+    const recipients = await prisma.$queryRawUnsafe<{
+      recipient_code: number
+      recipient_name: string
+      total_usd: number
+      decl_count: bigint
+    }[]>(`
+      SELECT
+        recipient_code,
+        recipient_name,
+        SUM(invoice_value_usd) as total_usd,
+        COUNT(DISTINCT decl_num_number) as decl_count
+      FROM declarations
+      WHERE ${codeFilter}
+        ${importFilter}
+        ${monthFilter}
+        AND recipient_name IS NOT NULL
+      GROUP BY recipient_code, recipient_name
+      ORDER BY total_usd DESC NULLS LAST
+      LIMIT 100
+    `)
+
+     // Відправники
+    const senders = await prisma.$queryRawUnsafe<{
+      sender_name: string
+      origin_country: string
+      total_usd: number
+      decl_count: bigint
+    }[]>(`
+      SELECT
+        sender_name,
+        origin_country,
+        SUM(invoice_value_usd) as total_usd,
+        COUNT(DISTINCT decl_num_number) as decl_count
+      FROM declarations
+      WHERE ${codeFilter}
+        ${importFilter}
+        ${monthFilter}
+        AND sender_name IS NOT NULL
+      GROUP BY sender_name, origin_country
+      ORDER BY total_usd DESC NULLS LAST
+      LIMIT 100
+    `)
+
+    res.json({
+      code: cleanCode,
+      total_usd: totalUsd,
+      recipients: recipients.map(r => ({
+        recipient_code: r.recipient_code,
+        recipient_name: r.recipient_name,
+        total_usd: Number(r.total_usd || 0),
+        share_pct: totalUsd > 0 ? (Number(r.total_usd || 0) / totalUsd) * 100 : 0,
+        decl_count: Number(r.decl_count),
+      })),
+      senders: senders.map(r => ({
+        sender_name: r.sender_name,
+        origin_country: r.origin_country,
+        total_usd: Number(r.total_usd || 0),
+        share_pct: totalUsd > 0 ? (Number(r.total_usd || 0) / totalUsd) * 100 : 0,
+        decl_count: Number(r.decl_count),
+      })),
+    })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Список доступних місяців
 analyticsRouter.get('/available-months', async (req: Request, res: Response) => {
   try {
     const months = await prisma.$queryRawUnsafe<{ month: string }[]>(`
@@ -147,12 +254,12 @@ analyticsRouter.get('/available-months', async (req: Request, res: Response) => 
   }
 })
 
-// 2. Звіт по росту імпорту з довільним вибором місяців
+// Звіт росту імпорту
 analyticsRouter.get('/growth-report', async (req: Request, res: Response) => {
   try {
     let { baseMonths, compareMonths, importId = 'latest' } = req.query as {
-      baseMonths?: string     // наприклад: "2025-01,2025-02,2025-03"
-      compareMonths?: string  // наприклад: "2025-10,2025-11,2025-12"
+      baseMonths?: string
+      compareMonths?: string
       importId?: string
     }
 
@@ -208,7 +315,6 @@ analyticsRouter.get('/growth-report', async (req: Request, res: Response) => {
       const compVal = Number(row.compare_value_usd || 0)
       const growthUsd = compVal - baseVal
       const growthValuePct = baseVal > 0 ? ((compVal / baseVal) - 1) * 100 : (compVal > 0 ? 100 : 0)
-
       const baseDecl = Number(row.base_decl_count || 0)
       const compDecl = Number(row.compare_decl_count || 0)
       const growthDeclPct = baseDecl > 0 ? ((compDecl / baseDecl) - 1) * 100 : (compDecl > 0 ? 100 : 0)
@@ -226,7 +332,7 @@ analyticsRouter.get('/growth-report', async (req: Request, res: Response) => {
     })
 
     result.sort((a, b) => b.growth_usd - a.growth_usd)
-    res.json(result.slice(0, 50)) // ТОП-50
+    res.json(result.slice(0, 50))
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Internal server error' })
