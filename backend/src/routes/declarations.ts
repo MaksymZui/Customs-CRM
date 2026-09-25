@@ -138,6 +138,7 @@ declarationsRouter.get('/', async (req: Request, res: Response) => {
         take,
         select: {
           id: true,
+          item_number: true,
           decl_num_prefix: true,
           decl_num_year: true,
           decl_num_number: true,

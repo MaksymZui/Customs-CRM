@@ -170,7 +170,7 @@ analyticsRouter.get('/uktved-detail', async (req: Request, res: Response) => {
     `)
     const totalUsd = Number(totalResult[0]?.total_usd || 0)
 
-    // Отримувачі
+       // Отримувачі
     const recipients = await prisma.$queryRawUnsafe<{
       recipient_code: number
       recipient_name: string
@@ -179,7 +179,7 @@ analyticsRouter.get('/uktved-detail', async (req: Request, res: Response) => {
     }[]>(`
       SELECT
         recipient_code,
-        recipient_name,
+        MIN(recipient_name) as recipient_name,
         SUM(invoice_value_usd) as total_usd,
         COUNT(DISTINCT decl_num_number) as decl_count
       FROM declarations
@@ -187,12 +187,13 @@ analyticsRouter.get('/uktved-detail', async (req: Request, res: Response) => {
         ${importFilter}
         ${monthFilter}
         AND recipient_name IS NOT NULL
-      GROUP BY recipient_code, recipient_name
+        AND recipient_code IS NOT NULL
+      GROUP BY recipient_code
       ORDER BY total_usd DESC NULLS LAST
       LIMIT 100
     `)
 
-     // Відправники
+       // Відправники
     const senders = await prisma.$queryRawUnsafe<{
       sender_name: string
       origin_country: string
@@ -200,8 +201,8 @@ analyticsRouter.get('/uktved-detail', async (req: Request, res: Response) => {
       decl_count: bigint
     }[]>(`
       SELECT
-        sender_name,
-        origin_country,
+        MIN(sender_name) as sender_name,
+        MIN(origin_country) as origin_country,
         SUM(invoice_value_usd) as total_usd,
         COUNT(DISTINCT decl_num_number) as decl_count
       FROM declarations
@@ -209,7 +210,13 @@ analyticsRouter.get('/uktved-detail', async (req: Request, res: Response) => {
         ${importFilter}
         ${monthFilter}
         AND sender_name IS NOT NULL
-      GROUP BY sender_name, origin_country
+      GROUP BY
+        REGEXP_REPLACE(
+          UPPER(TRIM(sender_name)),
+          '[^A-ZА-ЯІЇЄҐ0-9]',
+          '',
+          'g'
+        )
       ORDER BY total_usd DESC NULLS LAST
       LIMIT 100
     `)
@@ -333,6 +340,98 @@ analyticsRouter.get('/growth-report', async (req: Request, res: Response) => {
 
     result.sort((a, b) => b.growth_usd - a.growth_usd)
     res.json(result.slice(0, 50))
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+analyticsRouter.get('/counterparty', async (req: Request, res: Response) => {
+  try {
+    let { type, query, importId = 'latest', months } = req.query as Record<string, string>
+
+    if (!type || !query) return res.status(400).json({ error: 'type and query are required' })
+
+    if (!importId || importId === 'latest') {
+      const latestJob = await prisma.importJob.findFirst({
+        where: { status: 'done' },
+        orderBy: { created_at: 'desc' },
+      })
+      importId = latestJob ? latestJob.id : ''
+    }
+
+    const importFilter = importId && importId !== 'all'
+      ? `AND import_id = '${importId}'`
+      : ''
+
+    const monthList = months ? months.split(',').map(s => s.trim()).filter(Boolean) : []
+    const monthFilter = monthList.length > 0
+      ? `AND TO_CHAR(MAKE_DATE(1899, 12, 30) + (declaration_date * INTERVAL '1 day'), 'YYYY-MM') IN (${monthList.map(m => `'${m}'`).join(',')})`
+      : ''
+
+    // Фільтр по типу контрагента
+    const safeQuery = query.replace(/'/g, "''")
+    const counterpartyFilter = type === 'recipient'
+      ? `AND (recipient_name ILIKE '%${safeQuery}%' OR CAST(recipient_code AS TEXT) = '${safeQuery}')`
+      : `AND sender_name ILIKE '%${safeQuery}%'`
+
+    // Загальна зведення
+    const summaryResult = await prisma.$queryRawUnsafe<{
+      total_usd: number
+      decl_count: bigint
+      ukt_count: bigint
+    }[]>(`
+      SELECT
+        SUM(invoice_value_usd) as total_usd,
+        COUNT(DISTINCT decl_num_number) as decl_count,
+        COUNT(DISTINCT LEFT(product_code, 4)) as ukt_count
+      FROM declarations
+      WHERE 1=1
+        ${counterpartyFilter}
+        ${importFilter}
+        ${monthFilter}
+    `)
+
+    const summary = summaryResult[0]
+
+    // Розбивка по УКТ ЗЕД
+    const byUkt = await prisma.$queryRawUnsafe<{
+      ukt_zed_4: string
+      total_usd: number
+      decl_count: bigint
+    }[]>(`
+      SELECT
+        LEFT(product_code, 4) as ukt_zed_4,
+        SUM(invoice_value_usd) as total_usd,
+        COUNT(DISTINCT decl_num_number) as decl_count
+      FROM declarations
+      WHERE product_code IS NOT NULL
+        AND product_code != ''
+        ${counterpartyFilter}
+        ${importFilter}
+        ${monthFilter}
+      GROUP BY LEFT(product_code, 4)
+      ORDER BY total_usd DESC NULLS LAST
+      LIMIT 50
+    `)
+
+    const totalUsd = Number(summary?.total_usd || 0)
+
+    res.json({
+      type,
+      query,
+      summary: {
+        total_usd: totalUsd,
+        decl_count: Number(summary?.decl_count || 0),
+        ukt_count: Number(summary?.ukt_count || 0),
+      },
+      by_ukt: byUkt.map(r => ({
+        ukt_zed_4: r.ukt_zed_4,
+        total_usd: Number(r.total_usd || 0),
+        share_pct: totalUsd > 0 ? (Number(r.total_usd || 0) / totalUsd) * 100 : 0,
+        decl_count: Number(r.decl_count),
+      })),
+    })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Internal server error' })

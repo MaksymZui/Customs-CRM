@@ -36,12 +36,15 @@ export default function DeclarationsPage() {
     queryKey: ['declarations', filters],
     queryFn: () => declarationsApi.getAll(filters),
     placeholderData: prev => prev,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   })
 
   const { data: filterOptions } = useQuery({
     queryKey: ['filter-options'],
     queryFn: () => declarationsApi.getFilterOptions(),
     staleTime: Infinity,
+    gcTime: 30 * 60 * 1000,
   })
 
   const setFilter = (key: keyof DeclarationFilters, value: string) => {
